@@ -1,0 +1,6 @@
+
+# Test the first 3 files
+sbatch -p all.q -J process_SG -c 1 --mem=2G -t 4:00:00 -A proj_covid -o /mnt/share/temp/slurmoutput/ems2285/output/'%x.o%A_%a' --array=1-3 /ihme/singularity-images/rstudio/shells/execRscript.sh -i ihme/singularity-images/rstudio/latest.img -s /ihme/scratch/users/ems2285/thesis/code/prep_safegraph.R
+
+# Run all files
+sbatch -p all.q -J process_SG -c 1 --mem=3G -t 4:00:00 -A proj_covid -o /mnt/share/temp/slurmoutput/ems2285/output/'%x.o%A_%a' --array=1-181%10 /ihme/singularity-images/rstudio/shells/execRscript.sh -i ihme/singularity-images/rstudio/latest.img -s /ihme/scratch/users/ems2285/thesis/code/prep_safegraph.R
