@@ -18,6 +18,7 @@ list2env(args, environment()); rm(args)
 inputs <- read_yaml(input_path)
 
 # Define paths
+code_dir <- inputs$code_dir
 root_dir <- inputs$root_dir
 out_dir <- inputs$out_dir
 config_path <- file.path(root_dir,'inputs/config_files/config_test.yaml')
@@ -25,13 +26,13 @@ data_req_path <- file.path(root_dir,'inputs/config_files/min_data_requirement_by
 param_path <- file.path(out_dir,'params.csv')
   
 # Load all candidate models
-list_of_files <- list.files(paste0(root_dir,"/code/models"), full.names = T)
+list_of_files <- list.files(paste0(code_dir,"/models"), full.names = T)
 for (file in list_of_files){
   source(file)
 }
   
 # Source the pipeline function
-source(file.path(root_dir, "code/simulations/refactor/pipeline.R"))
+source(file.path(code_dir, "simulations/pipeline.R"))
 
 # Load parameter information
 param_set <- fread(param_path)[param_id == inputs$param_id]
@@ -58,7 +59,7 @@ max_train_t <- param_set$t
 problem_log <- data.table('location_id'=numeric(), 'instance'=numeric())
   
 pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_t = max_train_t,
-                        problem_log = problem_log, root_dir = root_dir)
+                        problem_log = problem_log, root_dir = root_dir, code_dir = code_dir)
   
   
 # Run the pipeline for each rep in the batch and combine results

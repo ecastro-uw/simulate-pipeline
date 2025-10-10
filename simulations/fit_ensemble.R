@@ -3,9 +3,9 @@
 fit_ensemble <- function(sim_dat, pipeline_inputs){
   
   # Source the ensemble functions
-  root_dir <- pipeline_inputs$root_dir
-  source(file.path(root_dir, "code/pipeline/ensemble_and_forecast.R"))
-  source(file.path(root_dir, "code/pipeline/model_performance_measures.R"))
+  code_dir <- pipeline_inputs$code_dir
+  source(file.path(code_dir, "pipeline/ensemble_and_forecast.R"))
+  source(file.path(code_dir, "pipeline/model_performance_measures.R"))
   
   # Define parameters
   w <- pipeline_inputs$configs$w

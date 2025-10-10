@@ -1,11 +1,12 @@
 # Sim launcher
 
 # Define root directory
+code_dir <- "/ihme/homes/ems2285/repos/simulate-pipeline"
 root_dir <- "/ihme/scratch/users/ems2285/thesis"
-source(file.path(root_dir, 'code/helper_functions/get_version.R'))
-source(file.path(root_dir, 'code/helper_functions/submit_jobs.R'))
-source(file.path(root_dir, 'code/simulations/refactor/set_up.R'))
-source(file.path(root_dir, 'code/simulations/refactor/prep_configs.R'))
+source(file.path(code_dir, 'helper_functions/get_version.R'))
+source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
+source(file.path(code_dir, 'simulations/set_up.R'))
+source(file.path(code_dir, 'simulations/prep_configs.R'))
 
 
 ## 1. SETUP OUTPUT DIRECTORY ##
@@ -23,7 +24,7 @@ for (pc in 1:nrow(params)){
   B <- params[param_id==pc, B]
   
   # Define inputs
-  input_list <- list(root_dir = root_dir, out_dir = out_dir, param_id = pc)
+  input_list <- list(code_dir = code_dir, root_dir = root_dir, out_dir = out_dir, param_id = pc)
   input_path <- paste0(out_dir,'/inputs/inputs_',pc,'.yaml')
   write_yaml(input_list, input_path)
   

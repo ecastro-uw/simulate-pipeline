@@ -2,11 +2,11 @@
 
 pipeline <- function(param_set, pipeline_inputs){
   
-  root_dir <- pipeline_inputs$root_dir
+  code_dir <- pipeline_inputs$code_dir
   
-  source(file.path(root_dir,'code/simulations/refactor/simulate_data.R'))
-  source(file.path(root_dir,'code/simulations/refactor/fit_ensemble.R'))
-  source(file.path(root_dir,'code/pipeline/adjust_UI.R'))
+  source(file.path(code_dir,'simulations/simulate_data.R'))
+  source(file.path(code_dir,'simulations/fit_ensemble.R'))
+  source(file.path(code_dir,'pipeline/adjust_UI.R'))
   
   # Simulate data
   sim_dat <- simulate_data(param_set)
