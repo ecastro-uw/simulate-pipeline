@@ -70,7 +70,9 @@ for (r in 1:param_set$R){
                     loc_id = rep(1:param_set$L, each=length(unique(one_rep$time_id))))
   one_rep <- cbind(ids, one_rep)
   batch_results <- rbind(batch_results, one_rep)
+  
+  #TODO - every 10 reps, write to a file (to keep track of progress while job is running)
 }  
 
 # SAVE TO DISK
-saveRDS(batch_results, paste0(out_dir,'batched_output/results_config_',inputs$param_id,'_batch_', batch_id,'.RDS'))
+fwrite(batch_results, paste0(out_dir,'/batched_output/results_config_',inputs$param_id,'_batch_', batch_id,'.csv'))

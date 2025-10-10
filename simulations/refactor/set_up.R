@@ -7,9 +7,9 @@ set_up <- function(root_dir){
   # Create output folders
   out_dir <- file.path(out_root, get_version(out_root))
   dir.create(out_dir)
+  dir.create(file.path(out_dir, 'inputs'))
   dir.create(file.path(out_dir,'batched_output'))
-  log_dir <- file.path(out_dir,'logs')
-  dir.create(log_dir)
+  dir.create(file.path(out_dir,'logs'))
   
   return(out_dir)
 }

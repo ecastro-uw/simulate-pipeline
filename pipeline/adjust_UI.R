@@ -18,8 +18,8 @@ adjust_UI <- function(results_draws, problem_log, configs){
   build_dt <- function(loc_id, results_draws){
     
     # grab the observations and fitted values
-    dt_temp <- results_draws[[loc_id]][[fit_model]]
-    dt_obs <- results_draws[[loc_id]][['obs']]
+    dt_temp <- as.data.table(results_draws[[loc_id]][[fit_model]])
+    dt_obs <- as.data.table(results_draws[[loc_id]][['obs']])
     
     # calculate mean, ll, ul of model draws (in log space)
     draw_cols <- paste0('draw_',1:n_draws)
@@ -66,8 +66,8 @@ adjust_UI <- function(results_draws, problem_log, configs){
   for (loc_id in loc_list){
     
     # grab the observations and fitted values
-    dt_temp <- results_draws[[loc_id]][[fit_model]]
-    dt_obs <- results_draws[[loc_id]][['obs']]
+    dt_temp <- as.data.table(results_draws[[loc_id]][[fit_model]])
+    dt_obs <- as.data.table(results_draws[[loc_id]][['obs']])
     
     # make the adjustment (in log space)
     draw_cols <- paste0('draw_',1:n_draws)

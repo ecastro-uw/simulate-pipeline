@@ -24,7 +24,7 @@ for (pc in 1:nrow(params)){
   
   # Define inputs
   input_list <- list(root_dir = root_dir, out_dir = out_dir, param_id = pc)
-  input_path <- paste0(out_dir,'/inputs_',pc,'.yaml')
+  input_path <- paste0(out_dir,'/inputs/inputs_',pc,'.yaml')
   write_yaml(input_list, input_path)
   
   #TODO - throttle jobs
