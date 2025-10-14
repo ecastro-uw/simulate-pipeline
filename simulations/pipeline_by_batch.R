@@ -20,10 +20,9 @@ inputs <- read_yaml(input_path)
 
 # Define paths
 code_dir <- inputs$code_dir
-root_dir <- inputs$root_dir
 out_dir <- inputs$out_dir
-config_path <- file.path(root_dir,'inputs/config_files/config_test.yaml')
-data_req_path <- file.path(root_dir,'inputs/config_files/min_data_requirement_by_model.csv')
+config_path <- file.path(code_dir,'config_files/config.yaml')
+data_req_path <- file.path(code_dir,'config_files/min_data_requirement_by_model.csv')
 param_path <- file.path(out_dir,'params.csv')
   
 # Load all candidate models
@@ -60,7 +59,7 @@ max_train_t <- param_set$t
 problem_log <- data.table('location_id'=numeric(), 'instance'=numeric())
   
 pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_t = max_train_t,
-                        problem_log = problem_log, root_dir = root_dir, code_dir = code_dir)
+                        problem_log = problem_log, code_dir = code_dir)
   
   
 # Run the pipeline for each rep in the batch and combine results

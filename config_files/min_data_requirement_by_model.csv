@@ -1,0 +1,8 @@
+﻿weeks_ahead,naive_flat_1,naive_slope_2,naive_model,arima_model,nnetar_model
+1,3,4,4,4,4
+2,4,5,5,5,5
+3,5,6,6,6,6
+4,6,7,7,7,7
+5,7,8,8,8,8
+6,8,9,9,9,9
+7,9,10,10,10,10

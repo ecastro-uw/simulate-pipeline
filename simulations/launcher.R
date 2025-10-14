@@ -2,7 +2,7 @@
 
 # Define root directory
 code_dir <- "/ihme/homes/ems2285/repos/simulate-pipeline"
-root_dir <- "/ihme/scratch/users/ems2285/thesis"
+out_root <- "/ihme/scratch/users/ems2285/thesis/outputs/simulations/"
 source(file.path(code_dir, 'helper_functions/get_version.R'))
 source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
 source(file.path(code_dir, 'simulations/set_up.R'))
@@ -10,11 +10,12 @@ source(file.path(code_dir, 'simulations/prep_configs.R'))
 
 
 ## 1. SETUP OUTPUT DIRECTORY ##
-out_dir <- set_up(root_dir)
+out_dir <- set_up(out_root)
 
 ## 2. CONFIG FILE ##
-params <- prep_configs(config_dir = file.path(root_dir, "inputs/config_files"), 
-                       out_dir)
+params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
+                       out_dir = out_dir)
+
 
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
@@ -24,7 +25,7 @@ for (pc in 1:nrow(params)){
   B <- params[param_id==pc, B]
   
   # Define inputs
-  input_list <- list(code_dir = code_dir, root_dir = root_dir, out_dir = out_dir, param_id = pc)
+  input_list <- list(code_dir = code_dir, out_dir = out_dir, param_id = pc)
   input_path <- paste0(out_dir,'/inputs/inputs_',pc,'.yaml')
   write_yaml(input_list, input_path)
   

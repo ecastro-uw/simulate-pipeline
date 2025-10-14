@@ -21,9 +21,9 @@ fit_ensemble <- function(sim_dat, pipeline_inputs){
     # Use the simulated data to fit and forecast
     result <- ensemble_and_forecast(
       county_dt = dt,
-      configs = pipeline_inputs[[1]],
-      min_train_t = pipeline_inputs[[2]],
-      max_train_t = pipeline_inputs[[3]]
+      configs = pipeline_inputs$configs,
+      min_train_t = pipeline_inputs$min_train_t,
+      max_train_t = pipeline_inputs$max_train_t
     )
     
     # save draws

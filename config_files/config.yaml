@@ -1,0 +1,19 @@
+---
+location_type: county #options: county, state, all
+location_list:
+  - 1
+mandates:
+  - Restaurants
+models: #candidate models to be included in the ensemble
+  - naive_flat_1
+  - naive_slope_2
+perform_meas:
+  - MSE
+w: 1  #number of weeks ahead to forecast
+d: 50 #number of draws
+padding: 2 #number of weeks after prior mandate lift to disregard
+default_train_wks: 8
+seed: 1030
+input_data_version: v3
+dep_var: per capita #count or per capita
+...

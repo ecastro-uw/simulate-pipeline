@@ -1,9 +1,6 @@
 
-set_up <- function(root_dir){
+set_up <- function(out_root){
 
-  # Define dirs
-  out_root <- file.path(root_dir, "outputs/simulations")
-  
   # Create output folders
   out_dir <- file.path(out_root, get_version(out_root))
   dir.create(out_dir)
