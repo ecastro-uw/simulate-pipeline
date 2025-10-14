@@ -1,5 +1,6 @@
 # Pipeline by batch
 # Launch the pipeline once for each rep in the batch
+start_time <- Sys.time()
 
 # Load packages
 library(argparse)
@@ -115,3 +116,7 @@ fwrite(batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
 fwrite(batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
 fwrite(batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
 fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
+
+end_time <- Sys.time()
+elapsed_time <- end_time - start_time
+print(elapsed_time)

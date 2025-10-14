@@ -1,13 +1,13 @@
 library(data.table)
 library(stringr)
 
-version_id <- '20251012.01'
+version_id <- '20251014.01'
 param_id <- 1
 
 dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id,'batched_output')
 
 # params
-params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id))
+params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id, 'params.csv'))
 num_batches <- params$B
 
 # load file and add batch id
@@ -46,3 +46,9 @@ if(length(coverage_files) == num_batches){
 coverage_all <- coverage_all[order(batch_id, rep_id)]
 
 # save?
+fwrite(pred_adj_all, paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/', version_id,
+                            '/pred_adj_p', param_id,'.csv'))
+fwrite(pred_pre_all, paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/', version_id,
+                            '/pred_pre_p', param_id,'.csv'))
+
+       

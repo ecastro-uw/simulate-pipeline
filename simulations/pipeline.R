@@ -30,8 +30,7 @@ pipeline <- function(param_set, pipeline_inputs){
   # (2) Pre-adjustment Forecasts
   forecast_target <- pipeline_inputs$configs$w - 1
   if(param_set$save_pre_adj_draws==T){
-    #if(param_set$save_all_pre_adj_time_steps==T){
-    if(param_set$save_all_time_steps==T){  
+    if(param_set$save_all_pre_adj_time_steps==T){
       # draws all time steps
       pre_adj_output <- rbindlist(lapply(final_results, function(x) x$ensemble))
     } else {
@@ -39,8 +38,7 @@ pipeline <- function(param_set, pipeline_inputs){
       pre_adj_output <- rbindlist(lapply(final_results, function(x) x$ensemble[time_id==forecast_target]))
     }
   } else {
-    #if(param_set$save_all_pre_adj_time_steps==T){
-    if(param_set$save_all_time_steps==T){  
+    if(param_set$save_all_pre_adj_time_steps==T){
       # summary, all time steps
       summarize <- function(results_one_loc){
         pred_tmp <- as.data.table(results_one_loc$ensemble)
@@ -67,7 +65,7 @@ pipeline <- function(param_set, pipeline_inputs){
           q50   = pred_tmp[, apply(.SD, 1, quantile, 0.500), .SDcols = cols],
           q97.5 = pred_tmp[, apply(.SD, 1, quantile, 0.975), .SDcols = cols]
         )
-    }
+      }
     }
     pre_adj_output <- rbindlist(lapply(final_results, summarize))
   }
