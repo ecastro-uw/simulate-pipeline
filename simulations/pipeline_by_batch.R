@@ -71,7 +71,7 @@ batch_cov_post <- c()
 batch_mult <- c()
 batch_pred_adj <- data.table()
 for (r in 1:param_set$R){
-  one_rep <- pipeline(param_set, pipeline_inputs)
+  one_rep <- pipeline(param_set, pipeline_inputs) #output time stamps for simulating, fitting, and adjusting
   
   # (1) Observations
   obs_dt <- one_rep$obs_dt
