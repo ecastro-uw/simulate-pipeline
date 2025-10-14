@@ -15,10 +15,10 @@ adjust_UI <- function(results_draws, problem_log, configs){
   
   # Step 1: create a dt from the results object with relevant information from the 
   # pre-mandate period (log mean visits, log LL, log UL, log observed visits)
-  build_dt <- function(loc_id, results_draws){
+  build_dt <- function(loc_id, results_draws, mod_name){
     
     # grab the observations and fitted values
-    dt_temp <- as.data.table(results_draws[[loc_id]][[fit_model]])
+    dt_temp <- as.data.table(results_draws[[loc_id]][[mod_name]])
     dt_obs <- as.data.table(results_draws[[loc_id]][['obs']])
     
     # calculate mean, ll, ul of model draws (in log space)
@@ -37,8 +37,10 @@ adjust_UI <- function(results_draws, problem_log, configs){
     return(dt_partial)
   }
   
-  dt_summary <- rbindlist(lapply(loc_list, build_dt, results_draws))
+  dt_summary <- rbindlist(lapply(loc_list, build_dt, results_draws, fit_model))
   
+  # Calculate initial pre-adjustment coverage
+  coverage_pre <- sum(dt_summary[, ifelse(log_obs>=log_ll & log_obs<=log_ul, 1, 0)])/nrow(dt_summary)
   
   # Step 2: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
   adj_and_check <- function(I, dt_summary, target_cov = 0.95){
@@ -89,6 +91,13 @@ adjust_UI <- function(results_draws, problem_log, configs){
     results_draws[[loc_id]]$p_values <- p_vals_dt
   }
   
-  return(results_draws)
+  # Calculate post-adjustment coverage 
+  dt_summary_post <- rbindlist(lapply(loc_list, build_dt, results_draws, 'ensemble_adj'))
+  coverage_post <- sum(dt_summary_post[, ifelse(log_obs>=log_ll & log_obs<=log_ul, 1, 0)])/nrow(dt_summary_post)
+  
+  return(list(final_results = results_draws, 
+              multiplier = multiplier, 
+              coverage_pre = coverage_pre, 
+              coverage_post = coverage_post))
 }
 

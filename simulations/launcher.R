@@ -32,7 +32,7 @@ for (pc in 1:nrow(params)){
   for (b in 1:B){
     # launch the jobs
     sbatch(jobname = paste0('param_',pc,'_batch_',b),
-           code = file.path(root_dir, "code/simulations/refactor/pipeline_by_batch.R"),
+           code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
            mem = '5G',
            fthreads = 1,

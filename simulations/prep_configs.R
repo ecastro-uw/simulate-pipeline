@@ -18,7 +18,10 @@ prep_configs <- function(config_dir, out_dir){
                 B = config_sim$B,
                 R = config_sim$R,
                 d = config_sim$d, 
-                L = config_sim$L
+                L = config_sim$L,
+                save_draws = config_sim$`save_draws?`,
+                save_all_time_steps = config_sim$`save_all_time_steps?`,
+                save_pre_adj_draws = config_sim$`save_pre_adj_draws?`
                 )
   )
   params <- cbind(data.table(param_id=1:nrow(params)), params)
