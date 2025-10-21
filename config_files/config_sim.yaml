@@ -1,16 +1,25 @@
 ---
 data_model: ensemble
 fit_model: ensemble
-t: 8
+t: 
+  - 6
+  - 8
+  - 10
 theta: 5
 sigma.f: 0.5
 sigma.s: 0.5
 p.s: 0.5
 y0: 0
-B: 50  # number of batches
-R: 100 # reps per batch
+B: 10  # number of batches
+R: 
+  - 100
+  - 200
+  - 400
 d: 1000
-L: 10
+L: 
+  - 10
+  - 20
+  - 40
 save_draws?: no
 save_all_time_steps?: yes
 save_pre_adj_draws?: no

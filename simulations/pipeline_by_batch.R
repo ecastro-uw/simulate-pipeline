@@ -69,6 +69,7 @@ batch_cov_pre <- c()
 batch_cov_post <- c()
 batch_mult <- c()
 batch_pred_adj <- data.table()
+batch_run_times <- data.table()
 for (r in 1:param_set$R){
   one_rep <- pipeline(param_set, pipeline_inputs) #output time stamps for simulating, fitting, and adjusting
   
@@ -100,6 +101,13 @@ for (r in 1:param_set$R){
   results_output <- cbind(ids, one_rep$results_output)
   batch_pred_adj <- rbind(batch_pred_adj, results_output)
   
+  # (7) Time stamps
+  time_stamps <- data.table(rep_id = r,
+                            sim_time = one_rep$time_stamps['sim_time'],
+                            fit_time = one_rep$time_stamps['fit_time'],
+                            adjust_time = one_rep$time_stamps['adjust_time'])
+  batch_run_times <- rbind(batch_run_times, time_stamps)
+  
   #TODO - every 10 reps, write to a file (to keep track of progress while job is running)
 }  
 
@@ -116,6 +124,17 @@ fwrite(batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv')
 fwrite(batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
 fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
 
+# Time stamps
 end_time <- Sys.time()
-elapsed_time <- end_time - start_time
-print(elapsed_time)
+batch_run_time <- end_time - start_time
+# output all time stamps
+avg <- batch_run_times[, lapply(.SD, mean), .SDcols = c('sim_time', 'fit_time', 'adjust_time')]
+totals <- batch_run_times[, lapply(.SD, sum), .SDcols = c('sim_time', 'fit_time', 'adjust_time')]
+run_time_out <- data.table(measure = c('avg', 'total'),
+           sim_time = c(avg$sim_time,totals$sim_time),
+           fit_time = c(avg$fit_time,totals$fit_time),
+           adj_time = c(avg$adjust_time,totals$adjust_time),
+           batch_time = c(NA, batch_run_time))
+fwrite(run_time_out, paste0(out_dir,'/batched_output/run_times_',suffix,'.csv'))
+
+print(batch_run_time)

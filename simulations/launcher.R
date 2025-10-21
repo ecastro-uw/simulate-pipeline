@@ -20,7 +20,8 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 for (pc in 1:nrow(params)){
-  
+#for (pc in params[R==100, which=T]){
+
   # Define number of batches
   B <- params[param_id==pc, B]
   
@@ -36,7 +37,7 @@ for (pc in 1:nrow(params)){
            code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
            mem = '5G',
-           fthreads = 1,
+           fthreads = 1, #up the number of threads
            log=T,
            e = file.path(out_dir,'logs/error_%A-%a.txt'),
            o = file.path(out_dir,'logs/out_%A-%a.txt'),

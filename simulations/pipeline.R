@@ -10,15 +10,23 @@ pipeline <- function(param_set, pipeline_inputs){
   
   ## PIPELINE 
   # (1) Simulate data
+  sim_start <- Sys.time()
   sim_dat <- simulate_data(param_set)
+  sim_end <- Sys.time()
+  sim_time <- sim_end - sim_start
   
   # (2) Fit the model
+  fit_start <- Sys.time()
   results_draws <- fit_ensemble(sim_dat, pipeline_inputs)
+  fit_end <- Sys.time()
+  fit_time <- fit_end - fit_start
   
   # (3) Adjust the UI
+  adjust_start <- Sys.time()
   adjusted_results <- adjust_UI(results_draws, pipeline_inputs$problem_log, pipeline_inputs$configs)
   final_results <- adjusted_results$final_results
-  
+  adjust_end <- Sys.time()
+  adjust_time <- adjust_end - adjust_start
   
   ## PREP RESULTS FOR OUTPUT
   
@@ -135,10 +143,14 @@ pipeline <- function(param_set, pipeline_inputs){
     results_output <- rbindlist(lapply(final_results, summarize))
   }
   
+  # (7) Time stamps
+  time_stamps <- c(sim_time = sim_time, fit_time = fit_time, adjust_time = adjust_time)
+  
   return(list(obs_dt = obs_dt,
               pre_adj_output = pre_adj_output,
               coverage_pre = coverage_pre,
               coverage_post = coverage_post,
               multiplier = multiplier,
-              results_output = results_output))
+              results_output = results_output,
+              time_stamps = time_stamps))
 }
