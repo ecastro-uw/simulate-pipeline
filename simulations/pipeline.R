@@ -89,7 +89,7 @@ pipeline <- function(param_set, pipeline_inputs){
 
   # (6) Adjusted forecasts
   if(param_set$save_draws==T){
-    if(param_set$save_all_time_steps==T){
+    if(param_set$save_all_time_steps==T){ #TODO p-value should be included in draw-level results too (not just summary)
       # draws, all time steps
       results_output <- rbindlist(lapply(final_results, function(x) x$ensemble_adj))
     } else{
