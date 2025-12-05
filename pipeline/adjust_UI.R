@@ -43,7 +43,7 @@ adjust_UI <- function(results_draws, problem_log, configs){
   coverage_pre <- sum(dt_summary[, ifelse(log_obs>=log_ll & log_obs<=log_ul, 1, 0)])/nrow(dt_summary)
   
   # Step 2: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
-  adj_and_check <- function(I, dt_summary, target_cov = 0.95){
+  adj_and_check <- function(I, dt_summary = dt_summary, target_cov = 0.95){
     
     # Inflate distance btwn mean and LL by I
     dt_summary[, d1 := (log_mean - log_ll)*I]
@@ -55,11 +55,15 @@ adjust_UI <- function(results_draws, problem_log, configs){
     coverage <- sum(dt_summary$verdict)/nrow(dt_summary)
     
     # Calc deviation from target coverage
-    diff <- abs(coverage - target_cov)
+    diff <- (coverage - target_cov)
     return(diff)
+    
+    #val <- ((coverage - target_cov)^2)+((I-1)^2/100000)
+    #return(val)
   }
   
-  # Step 3: Find the value of I that minimizes "diff" (the difference between empirical and target coverage)
+  
+  # Step 3: Find the value of I that minimizes the difference between empirical and target coverage
   multiplier <- optimize(f = adj_and_check, 
                          interval = c(0,10),
                          dt_summary)$minimum

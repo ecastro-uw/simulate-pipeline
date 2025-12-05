@@ -2,25 +2,17 @@
 data_model: ensemble
 fit_model: ensemble
 t: 8
-theta: 1
-sigma.f: 0.5
-sigma.s: 0
+theta: 0.5
+sigma.f: 0.1
+sigma.s: 0.1
 p.s: 0.5
 y0: 0
-B: 10  # number of batches
-R: 100 # number of reps per batch
+B: 1  # number of batches
+R: 50 # number of reps per batch
 d: 1000
-L: 
-  - 1
-  - 10
-  - 20
-  - 30
-  - 40
-  - 50
-  - 60
-  - 70
-save_draws?: no
-save_all_time_steps?: no
-save_pre_adj_draws?: no
-save_all_pre_adj_time_steps?: no
+L: 40
+save_draws?: yes
+save_all_time_steps?: yes
+save_pre_adj_draws?: yes
+save_all_pre_adj_time_steps?: yes
 ...

@@ -6,6 +6,9 @@ start_time <- Sys.time()
 library(argparse)
 library(data.table)
 library(yaml)
+library(foreach)
+library(doParallel)
+library(doRNG)
 
 # Get arguments from parser
 parser <- ArgumentParser()
@@ -63,54 +66,98 @@ pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_
   
   
 # Run the pipeline for each rep in the batch and combine results
-batch_obs <- data.table()
-batch_pred_pre <- data.table()
-batch_cov_pre <- c()
-batch_cov_post <- c()
-batch_mult <- c()
-batch_pred_adj <- data.table()
-batch_run_times <- data.table()
-for (r in 1:param_set$R){
-  one_rep <- pipeline(param_set, pipeline_inputs) #output time stamps for simulating, fitting, and adjusting
+
+# Set up parallel backend (4 cores)
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+# Run parallel loop
+results <- foreach(
+  r = 1:param_set$R,
+  .combine = function(x, y) {
+    list(
+      batch_obs = rbind(x$batch_obs, y$batch_obs),
+      batch_pred_pre = rbind(x$batch_pred_pre, y$batch_pred_pre),
+      batch_cov_pre = c(x$batch_cov_pre, y$batch_cov_pre),
+      batch_cov_post = c(x$batch_cov_post, y$batch_cov_post),
+      batch_mult = c(x$batch_mult, y$batch_mult),
+      batch_pred_adj = rbind(x$batch_pred_adj, y$batch_pred_adj),
+      batch_run_times = rbind(x$batch_run_times, y$batch_run_times)
+    )
+  },
+  .packages = c("data.table", "boot")
+  #.export = gsub(".R","", gsub(".*/models/", "", list_of_files))
+) %dorng% {
+  
+  # Source custom functions on this worker
+  list_of_files <- list.files(paste0(pipeline_inputs$code_dir, "/models"), full.names = TRUE)
+  for (file in list_of_files) {
+    source(file)
+  }
+
+  # Run pipeline for this rep
+  one_rep <- pipeline(param_set, pipeline_inputs)
   
   # (1) Observations
   obs_dt <- one_rep$obs_dt
   obs_dt <- cbind(data.table(rep_id = rep(r, nrow(obs_dt))), obs_dt)
-  batch_obs <- rbind(batch_obs, obs_dt)
   
   # (2) Pre-adjustment forecasts
-  ids <- data.table(#batch_id = batch_id,
-                    rep_id = rep(r, nrow(one_rep$pre_adj_output)),
-                    location_id = rep(1:param_set$L, each=length(unique(one_rep$pre_adj_output$time_id))))
+  ids <- data.table(
+    rep_id = rep(r, nrow(one_rep$pre_adj_output)),
+    location_id = rep(1:param_set$L, each = length(unique(one_rep$pre_adj_output$time_id)))
+  )
   pre_adj_output <- cbind(ids, one_rep$pre_adj_output)
-  batch_pred_pre <- rbind(batch_pred_pre, pre_adj_output)
   
   # (3) Pre-adjustment coverage rate
-  batch_cov_pre <- c(batch_cov_pre, one_rep$coverage_pre)
+  cov_pre <- one_rep$coverage_pre
   
-  # (4) post-adjustment coverage rate
-  batch_cov_post <- c(batch_cov_post, one_rep$coverage_post)
+  # (4) Post-adjustment coverage rate
+  cov_post <- one_rep$coverage_post
   
   # (5) Multiplier
-  batch_mult <- c(batch_mult, one_rep$multiplier)
+  mult <- one_rep$multiplier
   
   # (6) Adjusted forecasts
-  ids <- data.table(#batch_id = batch_id,
-                    rep_id = rep(r, nrow(one_rep$results_output)),
-                    location_id = rep(1:param_set$L, each=length(unique(one_rep$results_output$time_id))))
+  ids <- data.table(
+    rep_id = rep(r, nrow(one_rep$results_output)),
+    location_id = rep(1:param_set$L, each = length(unique(one_rep$results_output$time_id)))
+  )
   results_output <- cbind(ids, one_rep$results_output)
-  batch_pred_adj <- rbind(batch_pred_adj, results_output)
   
   # (7) Time stamps
-  time_stamps <- data.table(rep_id = r,
-                            sim_time = one_rep$time_stamps['sim_time'],
-                            fit_time = one_rep$time_stamps['fit_time'],
-                            adjust_time = one_rep$time_stamps['adjust_time'])
-  batch_run_times <- rbind(batch_run_times, time_stamps)
+  time_stamps <- data.table(
+    rep_id = r,
+    sim_time = one_rep$time_stamps['sim_time'],
+    fit_time = one_rep$time_stamps['fit_time'],
+    adjust_time = one_rep$time_stamps['adjust_time']
+  )
   
-  #TODO - every 10 reps, write to a file (to keep track of progress while job is running)
-}  
+  # Return all results as a list for this iteration
+  list(
+    batch_obs = obs_dt,
+    batch_pred_pre = pre_adj_output,
+    batch_cov_pre = cov_pre,
+    batch_cov_post = cov_post,
+    batch_mult = mult,
+    batch_pred_adj = results_output,
+    batch_run_times = time_stamps
+  )
+} #END LOOP
 
+# Stop the cluster when done
+stopCluster(cl)
+
+# Extract results
+batch_obs <- results$batch_obs
+batch_pred_pre <- results$batch_pred_pre
+batch_cov_pre <- results$batch_cov_pre
+batch_cov_post <- results$batch_cov_post
+batch_mult <- results$batch_mult
+batch_pred_adj <- results$batch_pred_adj
+batch_run_times <- results$batch_run_times
+
+# Combine vectorized output into a single table
 coverage_dt <- data.table(rep_id = 1:length(batch_cov_pre),
                           coverage_pre = batch_cov_pre,
                           coverage_post = batch_cov_post,

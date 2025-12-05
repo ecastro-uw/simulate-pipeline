@@ -11,6 +11,7 @@ source(file.path(code_dir, 'simulations/prep_configs.R'))
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
+#out_dir <- file.path(out_root,'20251031.02')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
@@ -20,6 +21,7 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 for (pc in 1:nrow(params)){
+#for (pc in 13:nrow(params)){
   
   # Define number of batches
   B <- params[param_id==pc, B]
@@ -35,8 +37,9 @@ for (pc in 1:nrow(params)){
     sbatch(jobname = paste0('param_',pc,'_batch_',b),
            code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
-           mem = '5G',
-           fthreads = 1, #up the number of threads
+           mem = '6G',
+           fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
+           #max_run_time
            log=T,
            e = file.path(out_dir,'logs/error_%A-%a.txt'),
            o = file.path(out_dir,'logs/out_%A-%a.txt'),
