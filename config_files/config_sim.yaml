@@ -15,4 +15,5 @@ save_draws?: yes
 save_all_time_steps?: yes
 save_pre_adj_draws?: yes
 save_all_pre_adj_time_steps?: yes
+save_candidate_draws?: yes
 ...

@@ -45,7 +45,18 @@ pipeline <- function(param_set, pipeline_inputs){
   # (1) Observations
   # sim_dat
   
-  # (2) Pre-adjustment forecasts
+  # (2) Candidate model estimates
+  if(param_set$save_candidate_draws==T){
+    candidate_mod_output <- preds_by_model[, .SD, .SDcols = c('model','location_id', 'time_id', draw_cols)]
+  } else {
+    candidate_mod_output <- preds_by_model[, `:=` (q2.5 = apply(.SD, 1, quantile, 0.025),
+                                                   q50 = apply(.SD, 1, quantile, 0.50),
+                                                   q97.5 = apply(.SD, 1, quantile, 0.975),
+                                                   mean = apply(.SD, 1, mean)),
+                                           .SDcols = draw_cols][,.(model, location_id, time_id, q2.5, q50, q97.5, mean)]
+  }
+  
+  # (3) Pre-adjustment ensemble estimates
   forecast_target <- pipeline_inputs$configs$w - 1
   if(param_set$save_pre_adj_draws==T){
     if(param_set$save_all_pre_adj_time_steps==T){
@@ -74,16 +85,16 @@ pipeline <- function(param_set, pipeline_inputs){
     }
   }
   
-  # (3) Pre-adjustment coverage rate
+  # (4) Pre-adjustment coverage rate
   coverage_pre <- adjusted_results$coverage_pre
   
-  # (4) Post-adjustment coverage rate
+  # (5) Post-adjustment coverage rate
   coverage_post <- adjusted_results$coverage_post
   
-  # (5) Multiplier
+  # (6) Multiplier
   multiplier <- adjusted_results$multiplier
 
-  # (6) Adjusted forecasts
+  # (7) Adjusted forecasts
   if(param_set$save_draws==T){
     if(param_set$save_all_time_steps==T){ 
       # save out draws, all time steps
@@ -111,19 +122,17 @@ pipeline <- function(param_set, pipeline_inputs){
     }
   }
   
-  # (7) Ensemble weights
+  # (8) Ensemble weights
   # weights_dt
   
-  # (8) Sigmas
+  # (9) Sigmas
   # sigmas_dt
   
-  # possibly add predictions from the candidate models with toggls for draws/summary and all/one time steps
-  # preds_by_model
-  
-  # (9) Time stamps
+  # (10) Time stamps
   time_stamps <- c(sim_time = sim_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
   return(list(obs_dt = sim_dat,
+              candidate_mod_output = candidate_mod_output,
               pre_adj_output = pre_adj_output,
               coverage_pre = coverage_pre,
               coverage_post = coverage_post,

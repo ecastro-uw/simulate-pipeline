@@ -21,7 +21,6 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 for (pc in 1:nrow(params)){
-#for (pc in 13:nrow(params)){
   
   # Define number of batches
   B <- params[param_id==pc, B]
