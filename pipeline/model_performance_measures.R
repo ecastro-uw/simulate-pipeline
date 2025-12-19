@@ -15,19 +15,26 @@ create_weights <- function(vals){
 
 
 # 1. MSE
-calc_mse <- function(vals, forecasts, observations){
+calc_mse <- function(vals, forecasts, observations, list_of_models, d){
   
-  # convert n real number vals into n+1 weights that sum to 1
+  # Convert n real number vals into n+1 weights that sum to 1
   weights <- create_weights(vals)
+  weights_dt <- data.table(model = list_of_models, weight = weights)
   
-  # For each model, calc the mean prediction for each week
-  mean_preds <- lapply(seq(1, length(weights)), function(x) rowMeans(forecasts[[x]][,-1]))
-
-  # Take a weighted average of model preds to get the ensemble preds
-  predictions <- Reduce(`+`, Map(`*`, mean_preds, weights))
+  # For each model, location, and time step, calculate the mean prediction
+  forecasts[, mean := rowMeans(.SD), .SDcols = paste0("draw_",1:d)]
+  
+  # Merge weights
+  small_dt <- merge(forecasts[,.(model, location_id, time_id, mean)], weights_dt, by='model')
+  
+  # Calculate weighted average by location and time
+  ensemble_dt <- small_dt[, .(weighted_mean = sum(mean * weight)), by=.(location_id, time_id)]
+  
+  # Merge observations
+  ensemble_dt <- merge(ensemble_dt, observations, by=c('location_id', 'time_id'), all.x=T)
   
   # Calculate MSE
-  mse <- mean((observations - predictions)^2)
+  mse <- mean((ensemble_dt$y - ensemble_dt$weighted_mean)^2)
   
   return(mse)
 }

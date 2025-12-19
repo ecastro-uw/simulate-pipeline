@@ -5,77 +5,73 @@ pipeline <- function(param_set, pipeline_inputs){
   code_dir <- pipeline_inputs$code_dir
   
   source(file.path(code_dir,'simulations/simulate_data.R'))
-  source(file.path(code_dir,'simulations/fit_ensemble.R'))
+  source(file.path(code_dir,'pipeline/make_predictions.R'))
+  source(file.path(code_dir,'pipeline/ensemble.R'))
   source(file.path(code_dir,'pipeline/adjust_UI.R'))
   
   ## PIPELINE 
   # (1) Simulate data
   sim_start <- Sys.time()
-  sim_dat <- simulate_data(param_set)
+  sim_dat <- simulate_data(param_set, pipeline_inputs)
   sim_end <- Sys.time()
   sim_time <- sim_end - sim_start
   
-  # (2) Fit the model
-  fit_start <- Sys.time()
-  results_draws <- fit_ensemble(sim_dat, pipeline_inputs)
-  fit_end <- Sys.time()
-  fit_time <- fit_end - fit_start
+  # (2) Make predictions
+  pred_start <- Sys.time()
+  preds_by_model <- make_predictions(sim_dat, pipeline_inputs)
+  sigmas_dt <- unique(preds_by_model[,.(model, time_id, sigma)])
+  pred_end <- Sys.time()
+  pred_time <- pred_end - pred_start
   
-  # (3) Adjust the UI
+  # (3) Ensemble
+  ensemble_start <- Sys.time()
+  ensemble_out_list <- ensemble(sim_dat, preds_by_model, pipeline_inputs, param_set)
+  unadj_results <- ensemble_out_list$unadj_results
+  weights_dt <- ensemble_out_list$weights
+  ensemble_end <- Sys.time()
+  ensemble_time <- ensemble_end - ensemble_start
+  
+  # (4) Adjust the UI
   adjust_start <- Sys.time()
-  adjusted_results <- adjust_UI(results_draws, pipeline_inputs$problem_log, pipeline_inputs$configs)
+  adjusted_results <- adjust_UI(sim_dat, unadj_results, pipeline_inputs$problem_log, pipeline_inputs$configs)
   final_results <- adjusted_results$final_results
   adjust_end <- Sys.time()
   adjust_time <- adjust_end - adjust_start
   
+  
   ## PREP RESULTS FOR OUTPUT
+  draw_cols <- paste0('draw_', 1:pipeline_inputs$configs$d)
   
   # (1) Observations
-  loc_id_list <- rep(1:param_set$L, each=param_set$t + pipeline_inputs$configs$w)
-  obs_dt <- cbind(data.table(location_id=loc_id_list), rbindlist(lapply(final_results,
-                             function(x) x$obs)))
+  # sim_dat
   
-  # (2) Pre-adjustment Forecasts
+  # (2) Pre-adjustment forecasts
   forecast_target <- pipeline_inputs$configs$w - 1
   if(param_set$save_pre_adj_draws==T){
     if(param_set$save_all_pre_adj_time_steps==T){
-      # draws all time steps
-      pre_adj_output <- rbindlist(lapply(final_results, function(x) x$ensemble))
+      # save out draws all time steps
+      pre_adj_output <- unadj_results[, .SD, .SDcols = c('location_id', 'time_id', draw_cols)]
     } else {
-      # draws, only time step of interest
-      pre_adj_output <- rbindlist(lapply(final_results, function(x) x$ensemble[time_id==forecast_target]))
+      # save out draws, only time step of interest
+      pre_adj_output <- unadj_results[time_id==forecast_target, .SD, .SDcols = c('location_id', 'time_id', paste0('draw_',1:pipeline_inputs$configs$d))]
     }
   } else {
     if(param_set$save_all_pre_adj_time_steps==T){
-      # summary, all time steps
-      summarize <- function(results_one_loc){
-        pred_tmp <- as.data.table(results_one_loc$ensemble)
-        cols <- names(pred_tmp)[-1]
-        
-        dt <- data.table(
-          time_id = pred_tmp$time_id,
-          q1    = pred_tmp[, apply(.SD, 1, quantile, 0.010), .SDcols = cols],
-          q2.5  = pred_tmp[, apply(.SD, 1, quantile, 0.025), .SDcols = cols],
-          q50   = pred_tmp[, apply(.SD, 1, quantile, 0.500), .SDcols = cols],
-          q97.5 = pred_tmp[, apply(.SD, 1, quantile, 0.975), .SDcols = cols]
-        )
-      }
+      # save out summary stats, all time steps
+      pre_adj_output <- unadj_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
+                                              q2.5 = apply(.SD, 1, quantile, 0.025),
+                                              q50 = apply(.SD, 1, quantile, 0.50),
+                                              q97.5 = apply(.SD, 1, quantile, 0.975)),
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
     } else {
-      # summary, only time step of interest
-      summarize <- function(results_one_loc){
-        pred_tmp <- as.data.table(results_one_loc$ensemble)[time_id==forecast_target]
-        cols <- names(pred_tmp)[-1]
-        
-        dt <- data.table(
-          time_id = pred_tmp$time_id,
-          q1    = pred_tmp[, apply(.SD, 1, quantile, 0.010), .SDcols = cols],
-          q2.5  = pred_tmp[, apply(.SD, 1, quantile, 0.025), .SDcols = cols],
-          q50   = pred_tmp[, apply(.SD, 1, quantile, 0.500), .SDcols = cols],
-          q97.5 = pred_tmp[, apply(.SD, 1, quantile, 0.975), .SDcols = cols]
-        )
-      }
+      # save out summary stats, only time step of interest
+      pre_adj_output <- unadj_results[time_id==forecast_target][,
+                                      `:=` (q1 = apply(.SD, 1, quantile, 0.01),
+                                            q2.5 = apply(.SD, 1, quantile, 0.025),
+                                            q50 = apply(.SD, 1, quantile, 0.50),
+                                            q97.5 = apply(.SD, 1, quantile, 0.975)),
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
     }
-    pre_adj_output <- rbindlist(lapply(final_results, summarize))
   }
   
   # (3) Pre-adjustment coverage rate
@@ -89,68 +85,51 @@ pipeline <- function(param_set, pipeline_inputs){
 
   # (6) Adjusted forecasts
   if(param_set$save_draws==T){
-    if(param_set$save_all_time_steps==T){ #TODO p-value should be included in draw-level results too (not just summary)
-      # draws, all time steps
-      results_output <- rbindlist(lapply(final_results, function(x) x$ensemble_adj))
+    if(param_set$save_all_time_steps==T){ 
+      # save out draws, all time steps
+      results_output <- final_results[, .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     } else{
-      # draws, only time step of interest
-      results_output <- rbindlist(lapply(final_results, function(x) x$ensemble_adj[time_id==forecast_target]))
+      # save out draws, only time step of interest
+      results_output <- final_results[time_id==forecast_target, .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     }
   } else { 
     if(param_set$save_all_time_steps==T){ 
-      # summary, all time steps
-      summarize <- function(results_one_loc){
-        # forecasts
-        pred_tmp <- results_one_loc$ensemble_adj
-        cols <- names(pred_tmp)[-1]
-        
-        dt <- data.table(
-          time_id = pred_tmp$time_id,
-          q1    = pred_tmp[, apply(.SD, 1, quantile, 0.010), .SDcols = cols],
-          q2.5  = pred_tmp[, apply(.SD, 1, quantile, 0.025), .SDcols = cols],
-          q50   = pred_tmp[, apply(.SD, 1, quantile, 0.500), .SDcols = cols],
-          q97.5 = pred_tmp[, apply(.SD, 1, quantile, 0.975), .SDcols = cols]
-        )
-        
-        #p-val
-        p_tmp <- results_one_loc$p_values
-        
-        # combine
-        dt <- merge(dt, p_tmp, by='time_id', all=T)
-      }
+      # save out summary stats, all time steps
+      results_output <- final_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
+                                              q2.5 = apply(.SD, 1, quantile, 0.025),
+                                              q50 = apply(.SD, 1, quantile, 0.50),
+                                              q97.5 = apply(.SD, 1, quantile, 0.975)),
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean=y, q97.5, p_val)]
     } else{
-      # summary, only time step of interest
-      summarize <- function(results_one_loc){
-        # forecasts
-        pred_tmp <- results_one_loc$ensemble_adj[time_id==forecast_target]
-        cols <- names(pred_tmp)[-1]
-        
-        dt <- data.table(
-          time_id = pred_tmp$time_id,
-          q1    = pred_tmp[, apply(.SD, 1, quantile, 0.010), .SDcols = cols],
-          q2.5  = pred_tmp[, apply(.SD, 1, quantile, 0.025), .SDcols = cols],
-          q50   = pred_tmp[, apply(.SD, 1, quantile, 0.500), .SDcols = cols],
-          q97.5 = pred_tmp[, apply(.SD, 1, quantile, 0.975), .SDcols = cols]
-        )
-        
-        #p-val
-        p_tmp <- results_one_loc$p_values
-        
-        # combine
-        dt <- merge(dt, p_tmp, by='time_id', all.x=T)
-      }
+      # save out summary, only time step of interest
+      results_output <- final_results[time_id==forecast_target][,
+                                      `:=` (q1 = apply(.SD, 1, quantile, 0.01),
+                                            q2.5 = apply(.SD, 1, quantile, 0.025),
+                                            q50 = apply(.SD, 1, quantile, 0.50),
+                                            q97.5 = apply(.SD, 1, quantile, 0.975)),
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean=y, q97.5, p_val)]
     }
-    results_output <- rbindlist(lapply(final_results, summarize))
   }
   
-  # (7) Time stamps
-  time_stamps <- c(sim_time = sim_time, fit_time = fit_time, adjust_time = adjust_time)
+  # (7) Ensemble weights
+  # weights_dt
   
-  return(list(obs_dt = obs_dt,
+  # (8) Sigmas
+  # sigmas_dt
+  
+  # possibly add predictions from the candidate models with toggls for draws/summary and all/one time steps
+  # preds_by_model
+  
+  # (9) Time stamps
+  time_stamps <- c(sim_time = sim_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
+  
+  return(list(obs_dt = sim_dat,
               pre_adj_output = pre_adj_output,
               coverage_pre = coverage_pre,
               coverage_post = coverage_post,
               multiplier = multiplier,
               results_output = results_output,
+              weights_dt = weights_dt,
+              sigmas_dt = sigmas_dt,
               time_stamps = time_stamps))
 }

@@ -8,18 +8,24 @@ naive_flat_1 <- function(dataset, w, d){
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)
   
-  # Log transformation
-  dt[, log_y := log(y)]
-  
   # Forecast (point estimate) w-week(s) ahead 
-  dt[, log_yhat := shift(log_y, n=w)]
+  dt[, yhat := shift(y, n=w), by=location_id]
   
   # Use the standard deviation of residuals to capture model uncertainty.
-  dt[, resid := log_y - log_yhat]
+  dt[, resid := y - yhat]
   resid_sd <- sd(dt$resid, na.rm=T)
+  #resid_sd <- param_set$sigma.f
   
-  # Generate draws for the w-week-ahead forecast, assuming a normal distribution
-  draws <- exp(rnorm(d, mean=dt[nrow(dt),log_y], sd=resid_sd))
+  # For each location, generate draws for the w-week-ahead forecast, assuming a normal distribution
+  last_t <- dt[time_id == max(dt$time_id)]
+  draws_mat <- t(apply(last_t, 1, function(row){
+    rnorm(d, mean=row["y"], sd=resid_sd)
+  }))
+  draws_dt <- as.data.table(draws_mat)
+  setnames(draws_dt, paste0("draw_", 1:d))
   
-  return(draws)
+  ids <- data.table(model='naive_flat_1', location_id=last_t$location_id, time_id=max(dt$time_id)+w, sigma = resid_sd)
+  draws_dt <- cbind(ids,draws_dt)
+  
+  return(draws_dt)
 }
