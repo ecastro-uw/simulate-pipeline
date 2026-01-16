@@ -11,7 +11,7 @@ source(file.path(code_dir, 'simulations/prep_configs.R'))
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20251031.02')
+#out_dir <- file.path(out_root,'20260113.02')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
@@ -21,7 +21,7 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 #for (pc in 1:nrow(params)){
-for (pc in 13:18){
+for (pc in 25:30){
   
   # Define number of batches
   B <- params[param_id==pc, B]

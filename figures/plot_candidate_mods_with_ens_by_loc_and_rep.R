@@ -6,15 +6,15 @@ library(ggplot2)
 library(patchwork)
 
 # Which run version id do you want to examine?
-version_id <- '20260101.01' 
+version_id <- '20260109.01' 
 # Do you want to plot pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'pre' 
 # Which parameter id?
 param <- 1
 # Which batch?
-batch <- 14
+batch <- 1
 # Which rep?
-rep <- 7
+rep <- 2
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)

@@ -12,15 +12,15 @@ library(ggplot2)
 library(patchwork)
 
 # Which run version id do you want to examine?
-version_id <- '20260101.01' 
+version_id <- '20260109.01' 
 # Do you want to plot pre- or post-adjusted predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'pre' 
 # Which parameter id?
 param <- 1
 # Which batch id?
-batch <- 2
+batch <- 1
 # Which rep?
-rep <- 7
+rep <- 1
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -36,7 +36,7 @@ obs_dt <- fread(paste0(dir,'/obs_p', param, '_b',batch,'.csv'))
 dt <- merge(obs_dt, pred_dt, by=c('rep_id', 'location_id', 'time_id'), all=T)
 
 # calculate p-value (proportion of draws <= obs)
-n_draws <- unique(params$d) 
+n_draws <- param_set$d 
 draw_cols <- paste0('draw_',1:n_draws)
 dt$p_val <- rowSums(dt[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
 
@@ -55,8 +55,8 @@ plot_one_loc <- function(data, loc_id, rep){
     geom_line(aes(x=time_id, y=y)) +
     geom_point(aes(x=time_id, y=mean), color='red') + 
     geom_line(aes(x=time_id, y=mean), color='red') + 
-    annotate(geom='point', x=0,y=plot_dt[time_id==0,y]+params$theta, pch=21) +
-    geom_errorbar(aes(x=time_id, y=mean, ymin=LL, ymax=UL), width=0.2, color='red') +
+    #annotate(geom='point', x=0,y=plot_dt[time_id==0,y]+param_set$theta, pch=21) +
+    geom_errorbar(data=plot_dt[time_id==0], aes(x=time_id, y=mean, ymin=LL, ymax=UL), width=0.4, color='red', alpha=0.5) +
     theme_classic() +
     ggtitle(paste('p-value:', plot_dt[time_id==0, p_val]))
 }
@@ -72,12 +72,15 @@ plot_list <- lapply(loc_ids, function(loc) {
 combined_plot <- wrap_plots(plot_list, ncol = 5, nrow = ceiling(param_set$L/5))
 
 # Calculate rep-level p-value
-rep_p <- mean(dt[rep_id==rep & time_id==0]$p_val)
+# mean method
+old_rep_p <- round(mean(dt[rep_id==rep & time_id==0]$p_val),3)
+# binomial method
+k <- sum(dt[rep_id==rep & time_id==0]$p_val < 0.05) #number of sig locs
+new_rep_p <- round(pbinom(k,param_set$L,0.05,lower.tail=F),3)
 
 # Add title
 combined_plot + plot_annotation(
   title = paste0('L=', param_set$L, ', theta=',param_set$theta, ', sigma=', param_set$sigma.f, ', p.s=', param_set$p.s,
-                 ', rep-level p=', rep_p),
+                 ', \n old p=', old_rep_p, ', new p=', new_rep_p),
   theme = theme(plot.title = element_text(hjust = 0.5, size = 16))
 )
-
