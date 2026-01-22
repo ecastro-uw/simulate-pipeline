@@ -6,15 +6,15 @@ library(ggplot2)
 library(patchwork)
 
 # Which run version id do you want to examine?
-version_id <- '20260109.01' 
+version_id <- '20260113.01' 
 # Do you want to plot pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'pre' 
 # Which parameter id?
-param <- 1
+param <- 2
 # Which batch?
-batch <- 1
+batch <- 6
 # Which rep?
-rep <- 2
+rep <- 12
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -23,6 +23,9 @@ dir <- file.path(root,'batched_output')
 # parameters
 params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id, 'params.csv'))
 param_set <- params[param_id==param]
+
+# draws
+draw_cols <- paste0('draw_',1:param_set$d)
 
 # load the candidate model predictions and summarize
 naive_dt <- fread(paste0(dir,'/candidate_mods_p',param,'_b',batch,'.csv'))

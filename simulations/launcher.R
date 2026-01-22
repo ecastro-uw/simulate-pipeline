@@ -16,6 +16,7 @@ out_dir <- set_up(out_root)
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
                        out_dir = out_dir)
+#params <- fread(file.path(out_dir,'params.csv'))
 
 
 ## 3. LAUNCH JOBS ##

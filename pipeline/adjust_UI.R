@@ -15,6 +15,9 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
   
   # Step 1: summarize draws from the pre-event period (mean, LL, UL, observed values)
   
+  # add observed values
+  results_draws <- merge(results_draws, data, by=c('location_id', 'time_id'))
+  
   # subset to pre-event period
   dt_summary <- results_draws[time_id < 0]
   
@@ -25,28 +28,53 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
                     UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
   dt_summary <- dt_summary[, (draw_cols) := NULL]
   
-  # add observed values
-  dt_summary <- merge(dt_summary, data, by=c('location_id', 'time_id'))
-  dt_summary <- dt_summary[, .(location_id, time_id, obs=y, mean, LL, UL)]
-  
   # Step 2: calculate initial pre-adjustment coverage
-  coverage_pre <- sum(dt_summary[, ifelse(obs>=LL & obs<=UL, 1, 0)])/nrow(dt_summary)
+  # coverage = % of loc-time steps where the observed value (y) falls within the 95% PI
+  coverage_pre <- sum(dt_summary[, ifelse(y>=LL & y<=UL, 1, 0)])/nrow(dt_summary)
   
   # Step 3: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
-  adj_and_check <- function(I, dt_summary = dt_summary, target_cov = 0.95){
+  calc_adj_coverage <- function(M, dt, by_draw){
     
-    # Inflate distance btwn mean and LL by I
-    dt_summary[, d1 := (mean - LL)*I]
-    # Inflate distance btwn mean and UL by I
-    dt_summary[, d2 := (UL - mean)*I]
+    # A. Adjust
+    if(by_draw==F){
+      # Inflate distance btwn mean and LL by M to get new LL
+      dt[, LL_adj := mean + (LL-mean)*M]
+      # Inflate distance btwn mean and UL by M to get new UL
+      dt[, UL_adj := mean + (UL-mean)*M]
+    } else {
+      # Apply the multiplier at draw level
+      dt[, mean := rowMeans(.SD), .SDcols = draw_cols]
+      draws_adj <- dt[, lapply(.SD, function(x) mean + ((x-mean)*M)), .SDcols = draw_cols]
+      draws_adj <- cbind(dt[,.(location_id, time_id, y)], draws_adj)
+      
+      # Summarize
+      dt <- draws_adj[time_id < 0]
+      dt[, `:=`(mean = rowMeans(.SD),
+                LL_adj = apply(.SD, 1, quantile, 0.025),
+                UL_adj = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
+      dt <- dt[, (draw_cols) := NULL]
+    }
     
-    # Calc coverage of the new interval
-    dt_summary[, verdict := ifelse(obs>=(mean - d1) & obs<=(mean + d2), 1, 0)]
-    coverage <- sum(dt_summary$verdict)/nrow(dt_summary)
+    # B. Calculate the adjusted coverage
+    coverage_post <- sum(dt[, ifelse(y>=LL_adj & y<=UL_adj, 1, 0)])/nrow(dt)
+    
+    # Return results
+    if(by_draw==F){
+      return(coverage_post)
+    } else { 
+      # if running by draw, return adjusted draws
+      return(list(coverage_post = coverage_post, draws_adj = draws_adj))
+    }
+
+  }
+  
+  adj_and_check <- function(M, dt_summary = dt_summary, target_cov = 0.95){
+    
+    coverage <- calc_adj_coverage(M, dt_summary, by_draw=F)
     
     # Calc deviation from target coverage
     #val <- (coverage - target_cov)^2
-    val <- ((coverage - target_cov)^2)+((I-1)^2/100000)
+    val <- ((coverage - target_cov)^2)+((M-1)^2/100000)
     return(val)
   }
   
@@ -55,24 +83,13 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
                          interval = c(0,10),
                          dt_summary)$minimum
 
-  # Step 5: Apply the multiplier to each draw and calculate p-value
+  # Step 5: Apply the multiplier to each draw
+  coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
+  coverage_post <- coverage_results$coverage_post
   
-  # apply multiplier
-  results_draws[, mean := rowMeans(.SD), .SDcols = draw_cols]
-  draws_adj <- results_draws[, lapply(.SD, function(x) mean + ((x-mean)*multiplier)), .SDcols = draw_cols]
-  draws_adj <- cbind(results_draws[,.(location_id, time_id)], draws_adj)
-  
-  # calculate p-value (what % of draws are less than or equal to the observed value?)
-  draws_adj <- merge(draws_adj, data, by=c('location_id', 'time_id'))
+  # Step 6: Calculate p-value (what % of draws are less than or equal to the observed value?)
   draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
   
-  # Step 6: Calculate post-adjustment coverage 
-  dt_summary_post <- draws_adj[time_id < 0]
-  dt_summary_post[, `:=`(mean = rowMeans(.SD),
-                         LL = apply(.SD, 1, quantile, 0.025),
-                         UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
-  dt_summary_post <- dt_summary_post[, (draw_cols) := NULL]
-  coverage_post <- sum(dt_summary_post[, ifelse(y>=LL & y<=UL, 1, 0)])/nrow(dt_summary_post)
   
   return(list(final_results = draws_adj, 
               multiplier = multiplier, 
