@@ -1,6 +1,9 @@
 # simulate data
+# Simulate an L x (t+w) matrix of data, where L is the number of locations (one row per loc),
+# t is the number of time steps to be used for fitting and w is the number of time steps ahead
+# you wish to forecast. 
 
-simulate_data <- function(param_set){
+simulate_data <- function(param_set, pipeline_inputs){
   
   # Define parameters
   data_model = as.character(param_set$data_model)
@@ -11,8 +14,9 @@ simulate_data <- function(param_set){
   p.s = param_set$p.s
   y0 = param_set$y0
   L = param_set$L
+  w <- pipeline_inputs$configs$w
   
-  # Simulate data - store in an L x (t+1) matrix 
+  # Simulate data - L x (t+1) matrix 
   if(data_model %in% c("naive_flat_1", "ensemble")){
     changes <- matrix(rnorm(L*t, mean=0, sd=sigma.f), ncol=t)
     tf <- t(apply(changes, 1, cumsum))
@@ -57,5 +61,15 @@ simulate_data <- function(param_set){
     sim_dat <- ts
   }
   
-  return(sim_dat)
+  # reshape
+  dt <- as.data.table(sim_dat)
+  dt[, location_id := .I]
+  dt <- melt(dt, id.vars = 'location_id',
+             variable.name = "time_id",
+             value.name = "y")
+  dt[, time_id := as.numeric(sub('V','', time_id)) - (t+1)]
+  dt <- dt[order(location_id, time_id)]
+  
+  
+  return(dt)
 }

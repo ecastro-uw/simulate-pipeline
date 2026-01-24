@@ -22,7 +22,8 @@ prep_configs <- function(config_dir, out_dir){
                 save_draws = config_sim$`save_draws?`,
                 save_all_time_steps = config_sim$`save_all_time_steps?`,
                 save_pre_adj_draws = config_sim$`save_pre_adj_draws?`,
-                save_all_pre_adj_time_steps = config_sim$`save_all_pre_adj_time_steps`
+                save_all_pre_adj_time_steps = config_sim$`save_all_pre_adj_time_steps?`,
+                save_candidate_draws = config_sim$`save_candidate_draws?`
                 )
   )
   params <- cbind(data.table(param_id=1:nrow(params)), params)

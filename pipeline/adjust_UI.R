@@ -1,5 +1,5 @@
 # Adjust the UI
-adjust_UI <- function(results_draws, problem_log, configs){
+adjust_UI <- function(data, results_draws, problem_log, configs){
   
   # define some parameters
   w <- configs$w #forecast length
@@ -7,99 +7,93 @@ adjust_UI <- function(results_draws, problem_log, configs){
   fit_model <- ifelse(length(configs$models)>1, 'ensemble',configs$models)
   
   # generate a list of locations
-  loc_list <- names(results_draws)
+  loc_list <- unique(results_draws$location_id)
   
   # remove any locations that didnt pass qc
   problem_log$location_id <- as.character(problem_log$location_id)
   loc_list <- setdiff(loc_list, problem_log$location_id)
   
-  # Step 1: create a dt from the results object with relevant information from the 
-  # pre-mandate period (log mean visits, log LL, log UL, log observed visits)
-  build_dt <- function(loc_id, results_draws, mod_name){
+  # Step 1: summarize draws from the pre-event period (mean, LL, UL, observed values)
+  
+  # add observed values
+  results_draws <- merge(results_draws, data, by=c('location_id', 'time_id'))
+  
+  # subset to pre-event period
+  dt_summary <- results_draws[time_id < 0]
+  
+  # summarize
+  draw_cols <- paste0('draw_',1:n_draws)
+  dt_summary[, `:=`(mean = rowMeans(.SD),
+                    LL = apply(.SD, 1, quantile, 0.025),
+                    UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
+  dt_summary <- dt_summary[, (draw_cols) := NULL]
+  
+  # Step 2: calculate initial pre-adjustment coverage
+  # coverage = % of loc-time steps where the observed value (y) falls within the 95% PI
+  coverage_pre <- sum(dt_summary[, ifelse(y>=LL & y<=UL, 1, 0)])/nrow(dt_summary)
+  
+  # Step 3: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
+  calc_adj_coverage <- function(M, dt, by_draw){
     
-    # grab the observations and fitted values
-    dt_temp <- as.data.table(results_draws[[loc_id]][[mod_name]])
-    dt_obs <- as.data.table(results_draws[[loc_id]][['obs']])
+    dt_copy <- copy(dt)
     
-    # calculate mean, ll, ul of model draws (in log space)
-    draw_cols <- paste0('draw_',1:n_draws)
-    log_draws <- log(dt_temp[, ..draw_cols])
-    dt_partial <- data.table(time_id=unique(dt_temp$time_id),
-                       log_mean = rowMeans(log_draws),
-                       log_ll = apply(log_draws,1,quantile,0.025),
-                       log_ul = apply(log_draws,1,quantile,0.975))
+    # A. Adjust
+    if(by_draw==F){
+      # Inflate distance btwn mean and LL by M to get new LL
+      dt_copy[, LL_adj := mean + (LL-mean)*M]
+      # Inflate distance btwn mean and UL by M to get new UL
+      dt_copy[, UL_adj := mean + (UL-mean)*M]
+    } else {
+      # Apply the multiplier at draw level
+      dt_copy[, mean := rowMeans(.SD), .SDcols = draw_cols]
+      draws_adj <- dt_copy[, lapply(.SD, function(x) mean + ((x-mean)*M)), .SDcols = draw_cols]
+      draws_adj <- cbind(dt_copy[,.(location_id, time_id, y)], draws_adj)
       
-    # add observed values to the table
-    dt_partial <- merge(dt_partial, dt_obs, by='time_id', all.x=T)
-    dt_partial <- dt_partial[time_id < 0, .(location_id=loc_id, time_id, obs=y,
-                    log_obs = log(y), log_mean, log_ll, log_ul)]
+      # Summarize
+      dt_copy <- draws_adj[time_id < 0]
+      dt_copy[, `:=`(mean = rowMeans(.SD),
+                LL_adj = apply(.SD, 1, quantile, 0.025),
+                UL_adj = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
+      dt_copy <- dt_copy[, (draw_cols) := NULL]
+    }
     
-    return(dt_partial)
+    # B. Calculate the adjusted coverage
+    coverage_post <- sum(dt_copy[, ifelse(y>=LL_adj & y<=UL_adj, 1, 0)])/nrow(dt_copy)
+    
+    # Return results
+    if(by_draw==F){
+      return(coverage_post)
+    } else { 
+      # if running by draw, return adjusted draws
+      return(list(coverage_post = coverage_post, draws_adj = draws_adj))
+    }
+
   }
   
-  dt_summary <- rbindlist(lapply(loc_list, build_dt, results_draws, fit_model))
-  
-  # Calculate initial pre-adjustment coverage
-  coverage_pre <- sum(dt_summary[, ifelse(log_obs>=log_ll & log_obs<=log_ul, 1, 0)])/nrow(dt_summary)
-  
-  # Step 2: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
-  adj_and_check <- function(I, dt_summary = dt_summary, target_cov = 0.95){
+  adj_and_check <- function(M, dt_summary = dt_summary, target_cov = 0.95){
     
-    # Inflate distance btwn mean and LL by I
-    dt_summary[, d1 := (log_mean - log_ll)*I]
-    # Inflate distance btwn mean and UL by I
-    dt_summary[, d2 := (log_ul - log_mean)*I]
-    
-    # Calc coverage of the new interval
-    dt_summary[, verdict := ifelse(log_obs>=(log_mean - d1) & log_obs<=(log_mean + d2), 1, 0)]
-    coverage <- sum(dt_summary$verdict)/nrow(dt_summary)
+    coverage <- calc_adj_coverage(M, dt_summary, by_draw=F)
     
     # Calc deviation from target coverage
-    diff <- (coverage - target_cov)
-    return(diff)
-    
-    #val <- ((coverage - target_cov)^2)+((I-1)^2/100000)
-    #return(val)
+    #val <- (coverage - target_cov)^2
+    val <- ((coverage - target_cov)^2)+((M-1)^2/100000)
+    return(val)
   }
   
+  # Step 4: Find the value of M that minimizes the difference between empirical and target coverage
+  M_grid <- seq(0.1, 5, by = 0.01)
+  obj_values <- sapply(M_grid, function(m) adj_and_check(m, dt_summary))
+  multiplier <- M_grid[which.min(obj_values)]
   
-  # Step 3: Find the value of I that minimizes the difference between empirical and target coverage
-  multiplier <- optimize(f = adj_and_check, 
-                         interval = c(0,10),
-                         dt_summary)$minimum
-
-  # Step 4: Apply the multiplier to each draw in the post-mandate period and calculate p-value
-  for (loc_id in loc_list){
-    
-    # grab the observations and fitted values
-    dt_temp <- as.data.table(results_draws[[loc_id]][[fit_model]])
-    dt_obs <- as.data.table(results_draws[[loc_id]][['obs']])
-    
-    # make the adjustment (in log space)
-    draw_cols <- paste0('draw_',1:n_draws)
-    log_draws <- log(dt_temp[, ..draw_cols])
-    log_draws$mean <- rowMeans(log_draws)
-    log_draws <- as.data.table(log_draws)
-    log_draws_adj <- log_draws[, lapply(.SD, function(x) mean + ((x-mean)*multiplier)), .SDcols = paste0('draw_',1:n_draws)]
-    draws_adj <- cbind(time_id=dt_temp$time_id, exp(log_draws_adj))
-    
-    # add to results
-    results_draws[[loc_id]]$ensemble_adj <- draws_adj
-    
-    # calculate p-value (what % of draws are less than or equal to the observed value?)
-    draws_adj <- merge(draws_adj, dt_obs[,.(time_id, obs=y)], by='time_id')
-    p_vals <- rowSums(draws_adj[, lapply(.SD, function(x) x <= obs), .SDcols = paste0('draw_',1:n_draws)])/n_draws
-    p_vals_dt <- data.table(time_id = dt_temp$time_id, p = p_vals)
-    
-    # add to results
-    results_draws[[loc_id]]$p_values <- p_vals_dt
-  }
+  # Step 5: Apply the multiplier to each draw
+  coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
+  coverage_post <- coverage_results$coverage_post
   
-  # Calculate post-adjustment coverage 
-  dt_summary_post <- rbindlist(lapply(loc_list, build_dt, results_draws, 'ensemble_adj'))
-  coverage_post <- sum(dt_summary_post[, ifelse(log_obs>=log_ll & log_obs<=log_ul, 1, 0)])/nrow(dt_summary_post)
+  # Step 6: Calculate p-value (what % of draws are less than or equal to the observed value?)
+  draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
   
-  return(list(final_results = results_draws, 
+  
+  return(list(final_results = draws_adj, 
               multiplier = multiplier, 
               coverage_pre = coverage_pre, 
               coverage_post = coverage_post))

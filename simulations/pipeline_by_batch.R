@@ -77,11 +77,14 @@ results <- foreach(
   .combine = function(x, y) {
     list(
       batch_obs = rbind(x$batch_obs, y$batch_obs),
+      batch_candidate = rbind(x$batch_candidate, y$batch_candidate),
       batch_pred_pre = rbind(x$batch_pred_pre, y$batch_pred_pre),
       batch_cov_pre = c(x$batch_cov_pre, y$batch_cov_pre),
       batch_cov_post = c(x$batch_cov_post, y$batch_cov_post),
       batch_mult = c(x$batch_mult, y$batch_mult),
       batch_pred_adj = rbind(x$batch_pred_adj, y$batch_pred_adj),
+      batch_weights = rbind(x$batch_weights, y$batch_weights),
+      batch_sigmas = rbind(x$batch_sigmas, y$batch_sigmas),
       batch_run_times = rbind(x$batch_run_times, y$batch_run_times)
     )
   },
@@ -100,47 +103,52 @@ results <- foreach(
   
   # (1) Observations
   obs_dt <- one_rep$obs_dt
-  obs_dt <- cbind(data.table(rep_id = rep(r, nrow(obs_dt))), obs_dt)
+  obs_dt <- cbind(rep_id = r, obs_dt)
   
-  # (2) Pre-adjustment forecasts
-  ids <- data.table(
-    rep_id = rep(r, nrow(one_rep$pre_adj_output)),
-    location_id = rep(1:param_set$L, each = length(unique(one_rep$pre_adj_output$time_id)))
-  )
-  pre_adj_output <- cbind(ids, one_rep$pre_adj_output)
+  # (2) Candidate model estimates
+  candidate_mod_output <- cbind(rep_id = r, one_rep$candidate_mod_output)
   
-  # (3) Pre-adjustment coverage rate
+  # (3) Pre-adjustment ensemble estimates
+  pre_adj_output <- cbind(rep_id = r, one_rep$pre_adj_output)
+  
+  # (4) Pre-adjustment coverage rates
   cov_pre <- one_rep$coverage_pre
   
-  # (4) Post-adjustment coverage rate
+  # (5) Post-adjustment coverage rates
   cov_post <- one_rep$coverage_post
   
-  # (5) Multiplier
+  # (6) Multipliers
   mult <- one_rep$multiplier
   
-  # (6) Adjusted forecasts
-  ids <- data.table(
-    rep_id = rep(r, nrow(one_rep$results_output)),
-    location_id = rep(1:param_set$L, each = length(unique(one_rep$results_output$time_id)))
-  )
-  results_output <- cbind(ids, one_rep$results_output)
+  # (7) Adjusted ensemble estimates
+  results_output <- cbind(rep_id = r, one_rep$results_output)
   
-  # (7) Time stamps
+  # (8) Ensemble weights
+  weights_dt <- cbind(rep_id = r, one_rep$weights_dt)
+  
+  # (9) Sigmas
+  sigmas_dt <- cbind(rep_id = r, one_rep$sigmas_dt)
+  
+  # (10) Time stamps
   time_stamps <- data.table(
     rep_id = r,
     sim_time = one_rep$time_stamps['sim_time'],
-    fit_time = one_rep$time_stamps['fit_time'],
+    pred_time = one_rep$time_stamps['pred_time'],
+    ensemble_time = one_rep$time_stamps['ensemble_time'],
     adjust_time = one_rep$time_stamps['adjust_time']
   )
   
   # Return all results as a list for this iteration
   list(
     batch_obs = obs_dt,
+    batch_candidate = candidate_mod_output,
     batch_pred_pre = pre_adj_output,
     batch_cov_pre = cov_pre,
     batch_cov_post = cov_post,
     batch_mult = mult,
     batch_pred_adj = results_output,
+    batch_weights = weights_dt,
+    batch_sigmas = sigmas_dt,
     batch_run_times = time_stamps
   )
 } #END LOOP
@@ -148,38 +156,35 @@ results <- foreach(
 # Stop the cluster when done
 stopCluster(cl)
 
-# Extract results
-batch_obs <- results$batch_obs
-batch_pred_pre <- results$batch_pred_pre
-batch_cov_pre <- results$batch_cov_pre
-batch_cov_post <- results$batch_cov_post
-batch_mult <- results$batch_mult
-batch_pred_adj <- results$batch_pred_adj
-batch_run_times <- results$batch_run_times
 
-# Combine vectorized output into a single table
-coverage_dt <- data.table(rep_id = 1:length(batch_cov_pre),
-                          coverage_pre = batch_cov_pre,
-                          coverage_post = batch_cov_post,
-                          multiplier = batch_mult)
+# Combine vectorized coverage output into a single table
+coverage_dt <- data.table(rep_id = 1:length(results$batch_cov_pre),
+                          coverage_pre = results$batch_cov_pre,
+                          coverage_post = results$batch_cov_post,
+                          multiplier = results$batch_mult)
 
 # SAVE TO DISK
 suffix <- paste0('p',inputs$param_id,'_b',batch_id)
 
-fwrite(batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
-fwrite(batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
-fwrite(batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
+fwrite(results$batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
+fwrite(results$batch_candidate, paste0(out_dir,'/batched_output/candidate_mods_',suffix,'.csv'))
+fwrite(results$batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
+fwrite(results$batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
+fwrite(results$batch_weights, paste0(out_dir,'/batched_output/ens_weights_',suffix,'.csv'))
+fwrite(results$batch_sigmas, paste0(out_dir,'/batched_output/sigmas_',suffix,'.csv'))
 fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
 
 # Time stamps
 end_time <- Sys.time()
 batch_run_time <- end_time - start_time
 # output all time stamps
-avg <- batch_run_times[, lapply(.SD, mean), .SDcols = c('sim_time', 'fit_time', 'adjust_time')]
-totals <- batch_run_times[, lapply(.SD, sum), .SDcols = c('sim_time', 'fit_time', 'adjust_time')]
+batch_run_times <- results$batch_run_times
+avg <- batch_run_times[, lapply(.SD, mean), .SDcols = c('sim_time', 'pred_time', 'ensemble_time', 'adjust_time')]
+totals <- batch_run_times[, lapply(.SD, sum), .SDcols = c('sim_time', 'pred_time', 'ensemble_time', 'adjust_time')]
 run_time_out <- data.table(measure = c('avg', 'total'),
            sim_time = c(avg$sim_time,totals$sim_time),
-           fit_time = c(avg$fit_time,totals$fit_time),
+           pred_time = c(avg$pred_time,totals$pred_time),
+           ensemble_time = c(avg$ensemble_time,totals$ensemble_time),
            adj_time = c(avg$adjust_time,totals$adjust_time),
            batch_time = c(NA, batch_run_time))
 fwrite(run_time_out, paste0(out_dir,'/batched_output/run_times_',suffix,'.csv'))
