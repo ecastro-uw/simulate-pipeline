@@ -35,28 +35,30 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
   # Step 3: Define a function that adjusts the uncertainty interval and calculates the new coverage rate
   calc_adj_coverage <- function(M, dt, by_draw){
     
+    dt_copy <- copy(dt)
+    
     # A. Adjust
     if(by_draw==F){
       # Inflate distance btwn mean and LL by M to get new LL
-      dt[, LL_adj := mean + (LL-mean)*M]
+      dt_copy[, LL_adj := mean + (LL-mean)*M]
       # Inflate distance btwn mean and UL by M to get new UL
-      dt[, UL_adj := mean + (UL-mean)*M]
+      dt_copy[, UL_adj := mean + (UL-mean)*M]
     } else {
       # Apply the multiplier at draw level
-      dt[, mean := rowMeans(.SD), .SDcols = draw_cols]
-      draws_adj <- dt[, lapply(.SD, function(x) mean + ((x-mean)*M)), .SDcols = draw_cols]
-      draws_adj <- cbind(dt[,.(location_id, time_id, y)], draws_adj)
+      dt_copy[, mean := rowMeans(.SD), .SDcols = draw_cols]
+      draws_adj <- dt_copy[, lapply(.SD, function(x) mean + ((x-mean)*M)), .SDcols = draw_cols]
+      draws_adj <- cbind(dt_copy[,.(location_id, time_id, y)], draws_adj)
       
       # Summarize
-      dt <- draws_adj[time_id < 0]
-      dt[, `:=`(mean = rowMeans(.SD),
+      dt_copy <- draws_adj[time_id < 0]
+      dt_copy[, `:=`(mean = rowMeans(.SD),
                 LL_adj = apply(.SD, 1, quantile, 0.025),
                 UL_adj = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
-      dt <- dt[, (draw_cols) := NULL]
+      dt_copy <- dt_copy[, (draw_cols) := NULL]
     }
     
     # B. Calculate the adjusted coverage
-    coverage_post <- sum(dt[, ifelse(y>=LL_adj & y<=UL_adj, 1, 0)])/nrow(dt)
+    coverage_post <- sum(dt_copy[, ifelse(y>=LL_adj & y<=UL_adj, 1, 0)])/nrow(dt_copy)
     
     # Return results
     if(by_draw==F){
@@ -78,11 +80,11 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
     return(val)
   }
   
-  # Step 4: Find the value of I that minimizes the difference between empirical and target coverage
-  multiplier <- optimize(f = adj_and_check, 
-                         interval = c(0,10),
-                         dt_summary)$minimum
-
+  # Step 4: Find the value of M that minimizes the difference between empirical and target coverage
+  M_grid <- seq(0.1, 5, by = 0.01)
+  obj_values <- sapply(M_grid, function(m) adj_and_check(m, dt_summary))
+  multiplier <- M_grid[which.min(obj_values)]
+  
   # Step 5: Apply the multiplier to each draw
   coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
   coverage_post <- coverage_results$coverage_post
