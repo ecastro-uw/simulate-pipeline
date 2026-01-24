@@ -5,8 +5,13 @@ code_dir <- "/ihme/homes/ems2285/repos/simulate-pipeline"
 out_root <- "/ihme/scratch/users/ems2285/thesis/outputs/simulations/"
 source(file.path(code_dir, 'helper_functions/get_version.R'))
 source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
+source(file.path(code_dir, 'helper_functions/throttle_jobs.R'))
 source(file.path(code_dir, 'simulations/set_up.R'))
 source(file.path(code_dir, 'simulations/prep_configs.R'))
+
+## THROTTLING SETTINGS ##
+max_concurrent_jobs <- 100  # Maximum number of jobs to run at once
+throttle_check_interval <- 30  # Seconds between checking job queue
 
 
 ## 1. SETUP OUTPUT DIRECTORY ##
@@ -31,8 +36,11 @@ for (pc in 1:nrow(params)){
   input_path <- paste0(out_dir,'/inputs/inputs_',pc,'.yaml')
   write_yaml(input_list, input_path)
   
-  #TODO - throttle jobs
   for (b in 1:B){
+    # Wait for a slot if we're at the job limit
+    wait_for_slot(max_jobs = max_concurrent_jobs,
+                  check_interval = throttle_check_interval)
+
     # launch the jobs
     sbatch(jobname = paste0('param_',pc,'_batch_',b),
            code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
