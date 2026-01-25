@@ -18,13 +18,21 @@ make_predictions <- function(data, pipeline_inputs){
     model <- get(mod)
     # For each model, provide n weeks of training data and the model will produce d forecasts for the
     # (n+w)th week. For all models, let n vary from min_train_t to max_train_t.
+
+    # First, compute sigma from the largest training set so all predictions use the same uncertainty
+    max_time_steps <- unique(dt$time_id)[1:max_train_t]
+    max_train_dt <- dt[time_id %in% max_time_steps]
+    max_result <- model(dataset=max_train_dt, w, d)
+    fixed_sigma <- max_result$sigma[1]
+
+    # Now make predictions for all time steps using the fixed sigma
     list_of_results <- vector("list", spread)
     index <- 0
     for(ts in min_train_t:max_train_t){
       index <- index+1
       time_steps <- unique(dt$time_id)[1:ts]
       train_dt <- dt[time_id %in% time_steps]
-      list_of_results[[index]] <- model(dataset=train_dt,w,d)
+      list_of_results[[index]] <- model(dataset=train_dt, w, d, sigma=fixed_sigma)
     }
     results_one_model <- rbindlist(list_of_results)
 
