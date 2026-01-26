@@ -6,6 +6,7 @@ prep_configs <- function(config_dir, out_dir){
   write_yaml(config_sim, file.path(out_dir, 'config_sim.yaml'))
   
   # Enumerate parameter combinations and save table to disk
+  if(config_sim$use_ratio==F){
   params <- as.data.table(
     expand.grid(data_model = as.character(config_sim$data_model),
                 fit_model = as.character(config_sim$fit_model),
@@ -26,7 +27,34 @@ prep_configs <- function(config_dir, out_dir){
                 save_candidate_draws = config_sim$`save_candidate_draws?`
                 )
   )
+  } else {
+    params <- as.data.table(
+      expand.grid(data_model = as.character(config_sim$data_model),
+                  fit_model = as.character(config_sim$fit_model),
+                  t = config_sim$t,
+                  theta = config_sim$theta,
+                  signal_noise_ratio = config_sim$signal_noise_ratio,
+                  p.s = config_sim$p.s,
+                  y0 = config_sim$y0,
+                  B = config_sim$B,
+                  R = config_sim$R,
+                  d = config_sim$d, 
+                  L = config_sim$L,
+                  save_draws = config_sim$`save_draws?`,
+                  save_all_time_steps = config_sim$`save_all_time_steps?`,
+                  save_pre_adj_draws = config_sim$`save_pre_adj_draws?`,
+                  save_all_pre_adj_time_steps = config_sim$`save_all_pre_adj_time_steps?`,
+                  save_candidate_draws = config_sim$`save_candidate_draws?`
+      )
+    )
+  }
   params <- cbind(data.table(param_id=1:nrow(params)), params)
+  
+  if(config_sim$use_ratio==T){
+    params[, sigma.f := theta / signal_noise_ratio]
+    params[, sigma.s := theta / signal_noise_ratio]
+  }
+  
   fwrite(params, file.path(out_dir, 'params.csv'))
   
   return(params)

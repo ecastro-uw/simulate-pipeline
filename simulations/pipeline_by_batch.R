@@ -166,13 +166,13 @@ coverage_dt <- data.table(rep_id = 1:length(results$batch_cov_pre),
 # SAVE TO DISK
 suffix <- paste0('p',inputs$param_id,'_b',batch_id)
 
-fwrite(results$batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
+#fwrite(results$batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
 #fwrite(results$batch_candidate, paste0(out_dir,'/batched_output/candidate_mods_',suffix,'.csv'))
 #fwrite(results$batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
 fwrite(results$batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
 #fwrite(results$batch_weights, paste0(out_dir,'/batched_output/ens_weights_',suffix,'.csv'))
 #fwrite(results$batch_sigmas, paste0(out_dir,'/batched_output/sigmas_',suffix,'.csv'))
-fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
+#fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
 
 # Time stamps
 end_time <- Sys.time()

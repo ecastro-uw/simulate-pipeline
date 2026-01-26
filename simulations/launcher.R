@@ -26,8 +26,7 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
-#for (pc in 1:nrow(params)){
-for (pc in 6:nrow(params)){
+for (pc in 1:nrow(params)){
   
   # Define number of batches
   B <- params[param_id==pc, B]
@@ -58,3 +57,45 @@ for (pc in 6:nrow(params)){
   
 }
 
+# Check that all expected files are present. If any are missing, re-launch.
+P <- nrow(params)
+B <- unique(params$B)
+num_expected <- P * B
+
+files <- list.files(path=file.path(out_dir, 'batched_output'), pattern = 'pred_adj')
+num_files <- length(files)
+
+if(num_files < num_expected){
+  
+  # Generate all expected file names
+  expected <- sprintf("pred_adj_p%d_b%d.csv", 
+                      rep(1:P, each = B), 
+                      rep(1:B, times = P))
+  
+  # Find missing files
+  missing <- setdiff(expected, files)
+  
+  # Re-launch associated jobs
+  for (file in missing){
+    pc <- as.numeric(str_extract(file, "(?<=_p)\\d+"))
+    b <- as.numeric(str_extract(file, "(?<=_b)\\d+"))
+    
+    input_path <- paste0(out_dir,'/inputs/inputs_',pc,'.yaml')
+    
+    sbatch(jobname = paste0('param_',pc,'_batch_',b),
+           code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
+           pass = paste0('--input_path ', input_path, ' --batch_id ', b),
+           mem = '6G', #if running large L, may need to increase but 6G is usually sufficient
+           fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
+           #max_run_time
+           log=T,
+           e = file.path(out_dir,'logs/error_%A-%a.txt'),
+           o = file.path(out_dir,'logs/out_%A-%a.txt'),
+           submit=T
+    )
+    
+  }
+  
+}
+
+length(list.files(path=file.path(out_dir, 'batched_output'), pattern = 'pred_adj')) == num_expected
