@@ -23,7 +23,7 @@ make_predictions <- function(data, pipeline_inputs){
     max_time_steps <- unique(dt$time_id)[1:max_train_t]
     max_train_dt <- dt[time_id %in% max_time_steps]
     max_result <- model(dataset=max_train_dt, w, d)
-    fixed_sigma <- max_result$sigma[1]
+    fixed_sigma <- unique(max_result$sigma)
 
     # Now make predictions for all time steps using the fixed sigma
     list_of_results <- vector("list", spread)

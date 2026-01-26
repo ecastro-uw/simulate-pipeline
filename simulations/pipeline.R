@@ -64,7 +64,8 @@ pipeline <- function(param_set, pipeline_inputs){
       pre_adj_output <- unadj_results[, .SD, .SDcols = c('location_id', 'time_id', draw_cols)]
     } else {
       # save out draws, only time step of interest
-      pre_adj_output <- unadj_results[time_id==forecast_target, .SD, .SDcols = c('location_id', 'time_id', paste0('draw_',1:pipeline_inputs$configs$d))]
+      pre_adj_output <- unadj_results[time_id==forecast_target,
+                                      .SD, .SDcols = c('location_id', 'time_id', draw_cols)]
     }
   } else {
     if(param_set$save_all_pre_adj_time_steps==T){
@@ -72,6 +73,7 @@ pipeline <- function(param_set, pipeline_inputs){
       pre_adj_output <- unadj_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                               q2.5 = apply(.SD, 1, quantile, 0.025),
                                               q50 = apply(.SD, 1, quantile, 0.50),
+                                              mean = apply(.SD, 1, mean),
                                               q97.5 = apply(.SD, 1, quantile, 0.975)),
                                       .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
     } else {
@@ -80,6 +82,7 @@ pipeline <- function(param_set, pipeline_inputs){
                                       `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                             q2.5 = apply(.SD, 1, quantile, 0.025),
                                             q50 = apply(.SD, 1, quantile, 0.50),
+                                            mean = apply(.SD, 1, mean),
                                             q97.5 = apply(.SD, 1, quantile, 0.975)),
                                       .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
     }
@@ -101,7 +104,8 @@ pipeline <- function(param_set, pipeline_inputs){
       results_output <- final_results[, .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     } else{
       # save out draws, only time step of interest
-      results_output <- final_results[time_id==forecast_target, .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
+      results_output <- final_results[time_id==forecast_target,
+                                      .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     }
   } else { 
     if(param_set$save_all_time_steps==T){ 
@@ -109,16 +113,18 @@ pipeline <- function(param_set, pipeline_inputs){
       results_output <- final_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                               q2.5 = apply(.SD, 1, quantile, 0.025),
                                               q50 = apply(.SD, 1, quantile, 0.50),
+                                              mean = apply(.SD, 1, mean),
                                               q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean=y, q97.5, p_val)]
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5, p_val)]
     } else{
       # save out summary, only time step of interest
       results_output <- final_results[time_id==forecast_target][,
                                       `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                             q2.5 = apply(.SD, 1, quantile, 0.025),
                                             q50 = apply(.SD, 1, quantile, 0.50),
+                                            mean = apply(.SD, 1, mean),
                                             q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean=y, q97.5, p_val)]
+                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5, p_val)]
     }
   }
   

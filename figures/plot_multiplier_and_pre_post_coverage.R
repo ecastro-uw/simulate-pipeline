@@ -2,7 +2,7 @@
 # Coverage adjustment plots
 
 # Which run version id do you want to examine?
-version_id <- '20260113.01' 
+version_id <- '20260124.01' 
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -32,13 +32,14 @@ all_files[, theta_lab := factor(theta,
 
 # create an annotation file showing the number of reps with multiplier<1
 annotations <- all_files[, .(pct_shrink = (sum(multiplier<1)/.N)*100), by=c('L_lab', 'theta_lab')]
-annotations[, label := paste0(pct_shrink,'% <1')]
-annotations$x <- 1.7
+annotations[, label := paste0(round(pct_shrink,1),'% <1')]
+annotations$x <- 1.5
 annotations$y <- 4
 
 # plot multiplier
 p1 <- ggplot(all_files) +
   geom_density(aes(x=multiplier)) +
+  geom_vline(xintercept=1,linetype='dashed') +
   geom_label(data = annotations, aes(x=x, y=y, label=label)) +
   scale_y_continuous(name="density") +
   facet_grid(L_lab~theta_lab) +

@@ -2,7 +2,7 @@
 
 
 # Which run version id do you want to examine?
-version_id <- '20260113.03' #'20251201.04'
+version_id <- '20260124.01' #'20251201.04'
 # Do you want to look at pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'adj' 
 
@@ -46,25 +46,22 @@ load_file <- function(file){
 # combine reps and calculate p-value/verdict for each rep
 list_of_files <- list.files(dir, pattern=paste0("pred_",pred_type), full.names = T)
 files_all <- rbindlist(lapply(list_of_files, load_file))
-files_all <- merge(files_all, params[,.(param_id, L, p.s)], by='param_id')
+files_all <- merge(files_all, params[,.(param_id, L, theta)], by='param_id')
 files_all[, p_val := pbinom(k,L,0.05,lower.tail=F)]
 files_all[, reject_null := ifelse(p_val <= 0.05, 1, 0)]
 
 # calculate power for each parameter configuration
-power_dt <- files_all[, list(power = (sum(reject_null)/.N)*100), by=c('param_id','p.s','L')]
+power_dt <- files_all[, list(power = (sum(reject_null)/.N)*100), by=c('param_id','theta','L')]
 
 lng_dt <- power_dt[order(p.s, L)]
 wide_dt <- dcast(lng_dt, p.s ~ L, value.var='power')
 fwrite(wide_dt, paste0(root,'/power_table_PRE.csv'))
 
-p2 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(p.s))) +
+p2 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(theta))) +
   geom_line() +
   theme_bw() +
   #ggtitle("Adjusted") +
-  ggtitle(paste0('theta=',unique(params$theta),
-                 ', sigma.f=',unique(params$sigma.f),
-                 ', sigma.s=', unique(params$sigma.s))) +
-  scale_color_discrete(name='p.s') +
+  scale_color_discrete(name='theta') +
   scale_x_continuous(limits=c(10,60), n.breaks=6) +
   scale_y_continuous(limits = c(20,100), n.breaks=5) 
 

@@ -90,6 +90,7 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
   coverage_post <- coverage_results$coverage_post
   
   # Step 6: Calculate p-value (what % of draws are less than or equal to the observed value?)
+  draws_adj <- coverage_results$draws_adj
   draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
   
   

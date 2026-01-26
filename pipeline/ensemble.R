@@ -54,6 +54,8 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs, param_set){
     # use results from the only candidate model
     result <- preds_dt[, model := 'ensemble']
   }
+  
+  #TODO calculate p-value
 
   return(list(unadj_results = result, weights = weights_dt))
 }

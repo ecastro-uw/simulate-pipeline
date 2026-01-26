@@ -16,7 +16,7 @@ throttle_check_interval <- 30  # Seconds between checking job queue
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260113.02')
+#out_dir <- file.path(out_root,'20260124.01')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
@@ -27,7 +27,7 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 #for (pc in 1:nrow(params)){
-for (pc in 25:30){
+for (pc in 6:nrow(params)){
   
   # Define number of batches
   B <- params[param_id==pc, B]

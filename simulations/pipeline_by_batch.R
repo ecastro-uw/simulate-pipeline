@@ -68,7 +68,7 @@ pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_
 # Run the pipeline for each rep in the batch and combine results
 
 # Set up parallel backend (4 cores)
-cl <- makeCluster(4)
+cl <- makeCluster(8)
 registerDoParallel(cl)
 
 # Run parallel loop
@@ -167,11 +167,11 @@ coverage_dt <- data.table(rep_id = 1:length(results$batch_cov_pre),
 suffix <- paste0('p',inputs$param_id,'_b',batch_id)
 
 fwrite(results$batch_obs, paste0(out_dir,'/batched_output/obs_',suffix,'.csv'))
-fwrite(results$batch_candidate, paste0(out_dir,'/batched_output/candidate_mods_',suffix,'.csv'))
-fwrite(results$batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
+#fwrite(results$batch_candidate, paste0(out_dir,'/batched_output/candidate_mods_',suffix,'.csv'))
+#fwrite(results$batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix,'.csv'))
 fwrite(results$batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
-fwrite(results$batch_weights, paste0(out_dir,'/batched_output/ens_weights_',suffix,'.csv'))
-fwrite(results$batch_sigmas, paste0(out_dir,'/batched_output/sigmas_',suffix,'.csv'))
+#fwrite(results$batch_weights, paste0(out_dir,'/batched_output/ens_weights_',suffix,'.csv'))
+#fwrite(results$batch_sigmas, paste0(out_dir,'/batched_output/sigmas_',suffix,'.csv'))
 fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
 
 # Time stamps
@@ -187,6 +187,6 @@ run_time_out <- data.table(measure = c('avg', 'total'),
            ensemble_time = c(avg$ensemble_time,totals$ensemble_time),
            adj_time = c(avg$adjust_time,totals$adjust_time),
            batch_time = c(NA, batch_run_time))
-fwrite(run_time_out, paste0(out_dir,'/batched_output/run_times_',suffix,'.csv'))
+#fwrite(run_time_out, paste0(out_dir,'/batched_output/run_times_',suffix,'.csv'))
 
 print(batch_run_time)
