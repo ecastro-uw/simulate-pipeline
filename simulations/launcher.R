@@ -49,12 +49,12 @@ for (pc in 1:nrow(params)){
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
            #max_run_time
            log=T,
-           e = file.path(out_dir,'logs/error_%A-%a.txt'),
-           o = file.path(out_dir,'logs/out_%A-%a.txt'),
+           e = file.path(out_dir, paste0('logs/error_p', pc, '_b', b, '.txt')),
+           o = file.path(out_dir, paste0('logs/out_p', pc, '_b', b, '.txt')),
            submit=T
     )
   }
-  
+
 }
 
 # Check that all expected files are present. If any are missing, re-launch.
@@ -89,13 +89,13 @@ if(num_files < num_expected){
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
            #max_run_time
            log=T,
-           e = file.path(out_dir,'logs/error_%A-%a.txt'),
-           o = file.path(out_dir,'logs/out_%A-%a.txt'),
+           e = file.path(out_dir, paste0('logs/error_p', pc, '_b', b, '.txt')),
+           o = file.path(out_dir, paste0('logs/out_p', pc, '_b', b, '.txt')),
            submit=T
     )
-    
+
   }
-  
+
 }
 
 length(list.files(path=file.path(out_dir, 'batched_output'), pattern = 'pred_adj')) == num_expected
