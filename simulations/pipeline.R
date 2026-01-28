@@ -58,14 +58,19 @@ pipeline <- function(param_set, pipeline_inputs){
   
   # (3) Pre-adjustment ensemble estimates
   forecast_target <- pipeline_inputs$configs$w - 1
+  
+  # add p-value
+  unadj_results <- merge(unadj_results, sim_dat, by=c('location_id', 'time_id'))
+  unadj_results$p_val <- rowSums(unadj_results[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/length(draw_cols)
+  
   if(param_set$save_pre_adj_draws==T){
     if(param_set$save_all_pre_adj_time_steps==T){
       # save out draws all time steps
-      pre_adj_output <- unadj_results[, .SD, .SDcols = c('location_id', 'time_id', draw_cols)]
+      pre_adj_output <- unadj_results[, .SD, .SDcols = c('location_id', 'time_id', 'p_val', draw_cols)]
     } else {
       # save out draws, only time step of interest
       pre_adj_output <- unadj_results[time_id==forecast_target,
-                                      .SD, .SDcols = c('location_id', 'time_id', draw_cols)]
+                                      .SD, .SDcols = c('location_id', 'time_id', 'p_val', draw_cols)]
     }
   } else {
     if(param_set$save_all_pre_adj_time_steps==T){
@@ -75,7 +80,7 @@ pipeline <- function(param_set, pipeline_inputs){
                                               q50 = apply(.SD, 1, quantile, 0.50),
                                               mean = apply(.SD, 1, mean),
                                               q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
+                                      .SDcols = draw_cols][,.(location_id, time_id, p_val, q1, q2.5, q50, mean, q97.5)]
     } else {
       # save out summary stats, only time step of interest
       pre_adj_output <- unadj_results[time_id==forecast_target][,
@@ -84,7 +89,7 @@ pipeline <- function(param_set, pipeline_inputs){
                                             q50 = apply(.SD, 1, quantile, 0.50),
                                             mean = apply(.SD, 1, mean),
                                             q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, q1, q2.5, q50, mean, q97.5)]
+                                      .SDcols = draw_cols][,.(location_id, time_id, p_val, q1, q2.5, q50, mean, q97.5)]
     }
   }
   
