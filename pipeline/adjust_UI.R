@@ -70,20 +70,56 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
 
   }
   
-  adj_and_check <- function(M, dt_summary = dt_summary, target_cov = 0.95){
-    
-    coverage <- calc_adj_coverage(M, dt_summary, by_draw=F)
-    
-    # Calc deviation from target coverage
-    #val <- (coverage - target_cov)^2
-    val <- ((coverage - target_cov)^2)+((M-1)^2/100000)
-    return(val)
+  # Step 4: Find the value of M using bisection method
+  # Coverage is monotonically increasing with M, so bisection is appropriate
+  bisect_for_coverage <- function(dt, target_cov = 0.95, tol = 1e-4, max_iter = 100) {
+
+    # Initialize bounds
+    M_low <- 0.1
+    M_high <- 5.0
+
+    # Get coverage at bounds
+    cov_low <- calc_adj_coverage(M_low, dt, by_draw = FALSE)
+    cov_high <- calc_adj_coverage(M_high, dt, by_draw = FALSE)
+
+    # Check if target is achievable within bounds
+    if (cov_low > target_cov) {
+      # Coverage already above target at lower bound, return lower bound
+      return(M_low)
+    }
+    if (cov_high < target_cov) {
+      # Cannot achieve target coverage even at upper bound, return upper bound
+      return(M_high)
+    }
+
+    # Bisection loop
+    for (i in 1:max_iter) {
+      M_mid <- (M_low + M_high) / 2
+      cov_mid <- calc_adj_coverage(M_mid, dt, by_draw = FALSE)
+
+      # Check convergence
+      if (abs(cov_mid - target_cov) < tol) {
+        return(M_mid)
+      }
+
+      # Update bounds
+      if (cov_mid < target_cov) {
+        M_low <- M_mid
+      } else {
+        M_high <- M_mid
+      }
+
+      # Check if bounds have converged
+      if ((M_high - M_low) < tol) {
+        return(M_mid)
+      }
+    }
+
+    # Return midpoint if max iterations reached
+    return((M_low + M_high) / 2)
   }
-  
-  # Step 4: Find the value of M that minimizes the difference between empirical and target coverage
-  M_grid <- seq(0.1, 5, by = 0.01)
-  obj_values <- sapply(M_grid, function(m) adj_and_check(m, dt_summary))
-  multiplier <- M_grid[which.min(obj_values)]
+
+  multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
   
   # Step 5: Apply the multiplier to each draw
   coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
