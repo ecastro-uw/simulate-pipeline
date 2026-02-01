@@ -16,7 +16,7 @@ throttle_check_interval <- 30  # Seconds between checking job queue
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260124.01')
+#out_dir <- file.path(out_root,'20260128.01')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
@@ -45,7 +45,7 @@ for (pc in 1:nrow(params)){
     sbatch(jobname = paste0('param_',pc,'_batch_',b),
            code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
-           mem = '6G', #if running large L, may need to increase but 6G is usually sufficient
+           mem = '10G', #if running large L, may need to increase but 6G is usually sufficient
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
            #max_run_time
            log=T,

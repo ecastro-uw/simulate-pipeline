@@ -2,21 +2,15 @@
 data_model: ensemble
 fit_model: ensemble
 t: 8
-theta: 
-  - 1
-  - 2
-  - 3
+theta: 1
 use_ratio: yes
-signal_noise_ratio:
-  - 0.2
-  - 0.5
-  - 0.8
+signal_noise_ratio: 0.2
 sigma.f: 1
 sigma.s: 1
 p.s: 0.5
 y0: 0
 B: 20  # number of batches
-R: 50 # number of reps per batch
+R: 250 # number of reps per batch
 d: 1000
 L: 
   - 10
