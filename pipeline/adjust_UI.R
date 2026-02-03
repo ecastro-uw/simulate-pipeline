@@ -71,52 +71,53 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
   }
   
   # Step 4: Find the value of M using bisection method
-  # Coverage is monotonically increasing with M, so bisection is appropriate
-  bisect_for_coverage <- function(dt, target_cov = 0.95, tol = 1e-4, max_iter = 100) {
+  bisect_for_coverage <- function(dt, target_cov = 0.95, tol = 1e-6, max_iter = 25) {
 
     # Initialize bounds
-    M_low <- 0.1
-    M_high <- 5.0
+    M_low <- 0
+    M_high <- 50
 
     # Get coverage at bounds
     cov_low <- calc_adj_coverage(M_low, dt, by_draw = FALSE)
     cov_high <- calc_adj_coverage(M_high, dt, by_draw = FALSE)
 
-    # Check if target is achievable within bounds
-    if (cov_low > target_cov) {
-      # Coverage already above target at lower bound, return lower bound
-      return(M_low)
-    }
-    if (cov_high < target_cov) {
-      # Cannot achieve target coverage even at upper bound, return upper bound
-      return(M_high)
-    }
-
+    diff <- cov_high - cov_low
+    iter <- 0
+    
+    cov_dt <- data.table()
     # Bisection loop
-    for (i in 1:max_iter) {
+    while (diff>tol & iter < max_iter){
+      # continue bisecting until small enough interval or reach max iter
       M_mid <- (M_low + M_high) / 2
       cov_mid <- calc_adj_coverage(M_mid, dt, by_draw = FALSE)
-
-      # Check convergence
-      if (abs(cov_mid - target_cov) < tol) {
-        return(M_mid)
-      }
-
+    
+      one_row <- data.table(iter=iter, low = M_low, high = M_high, mid = M_mid, coverage = cov_mid)
+      cov_dt <- rbind(cov_dt, one_row)
+      
       # Update bounds
       if (cov_mid < target_cov) {
         M_low <- M_mid
+        cov_low <- cov_mid
       } else {
         M_high <- M_mid
+        cov_high <- cov_mid
       }
-
-      # Check if bounds have converged
-      if ((M_high - M_low) < tol) {
-        return(M_mid)
-      }
+      diff <- cov_high - cov_low
+      iter <- iter + 1
+      
     }
 
-    # Return midpoint if max iterations reached
-    return((M_low + M_high) / 2)
+    # Return smallest M once M_low and M_high are within tol apart or
+    # max_iter has been reached. 
+    if(cov_low==0.95){
+      return(M_low)
+    } else if(cov_mid==0.95){
+      return(M_mid)
+    } else if(cov_high==0.95){
+      return(M_high)
+    } else { 
+      return(M_low)
+    }
   }
 
   multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
