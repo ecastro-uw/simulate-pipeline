@@ -16,7 +16,7 @@ throttle_check_interval <- 30  # Seconds between checking job queue
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260128.01')
+#out_dir <- file.path(out_root,'20260203.01')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 

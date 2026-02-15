@@ -172,7 +172,7 @@ fwrite(results$batch_pred_pre, paste0(out_dir,'/batched_output/pred_pre_',suffix
 fwrite(results$batch_pred_adj, paste0(out_dir,'/batched_output/pred_adj_',suffix,'.csv'))
 #fwrite(results$batch_weights, paste0(out_dir,'/batched_output/ens_weights_',suffix,'.csv'))
 #fwrite(results$batch_sigmas, paste0(out_dir,'/batched_output/sigmas_',suffix,'.csv'))
-#fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
+fwrite(coverage_dt, paste0(out_dir,'/batched_output/coverage_',suffix,'.csv'))
 
 # Time stamps
 end_time <- Sys.time()

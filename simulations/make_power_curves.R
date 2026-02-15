@@ -1,9 +1,9 @@
 # Make power curve
 
 # Which run version id do you want to examine?
-version_id <- '20260128.01'
+version_id <- '20260203.05'
 # Do you want to look at pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
-pred_type <- 'pre' 
+pred_type <- 'adj' 
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -46,22 +46,50 @@ power_dt[, theta_lab := factor(theta,
                                levels=unique(power_dt$theta),
                                labels=paste('theta =', unique(power_dt$theta)))]
 # Plot
-p1 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(signal_noise_ratio))) +
+p0 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(signal_noise_ratio))) +
   geom_line() +
   geom_point() +
   theme_bw() +
-  #facet_wrap(~theta_lab) +
+  theme(axis.text = element_text(size=12)) +
+  facet_wrap(~theta_lab) +
   scale_color_discrete(name='theta:sigma') +
-  scale_x_continuous(limits=c(10,60), n.breaks=6, name="Number of Locations") +
-  scale_y_continuous(limits = c(20,80), n.breaks=5, name="Power",
+  scale_x_continuous(name = "Number of Locations") +
+  #scale_x_continuous(limits=c(10,60), n.breaks=6, name="Number of Locations") +
+  scale_y_continuous(name="Power", limits=c(40,100),
                      labels = scales::label_percent(scale = 1)) 
 
-pdf(paste0(root,'/power_curve_pre_adj.pdf'), width=7,height=5)
-p1
+
+pdf(paste0(root,'/power_curve_adj.pdf'), width=7,height=5)
+p0
+dev.off()
+
+pdf(paste0(root,'/power_curves_side_by_side.pdf'), width=10,height=5)
+p0 + p1 + plot_layout(guides = "collect") 
 dev.off()
 
 
+small_dt <- power_dt[signal_noise_ratio==0.45]
+ggplot(small_dt, aes(x=L,y=power)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = 80, linetype='dotted') +
+  theme_bw() +
+  theme(axis.text = element_text(size=11)) +
+  scale_x_continuous(name = "Number of Locations", breaks=seq(20,100,20)) +
+  scale_y_continuous(name="Power",
+                     labels = scales::label_percent(scale = 1)) +
+  ggtitle('Signal-to-Noise Ratio: 0.45')
 
+
+ggplot(files_all[signal_noise_ratio==.45 & L==40], aes(x=k)) +
+  geom_histogram(binwidth=1, fill='lightblue', color='white') +
+  geom_vline(xintercept = 3.5, linetype='dashed') +
+  scale_x_continuous(name="Number of stat. sig. locations (k) \nOut of 40 total") +
+  scale_y_continuous(name="Number of simulation runs") +
+  ggtitle('Distribution of k across 50K runs (critical value = 4)') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
 
 # Combine plots into a grid
 plot_list <- list(p1,p2)
@@ -141,8 +169,8 @@ ggplot(power_dt, aes(x=L, y=power)) +
   theme(plot.title = element_text(size = 10))
 
 
-# for a given paramter set, calculate power by rep to determine min number of reps for stabilization
-L10_files <- list.files(dir, pattern=paste0("pred_",pred_type,"_p6"), full.names = T)
+# for a given parameter set, calculate power by rep to determine min number of reps for stabilization
+L10_files <- list.files(dir, pattern=paste0("pred_",pred_type,"_p31"), full.names = T)
 L10_dt <- rbindlist(lapply(L10_files, load_file))
 L10_dt <- merge(L10_dt, params[,.(param_id, L)], by='param_id')
 L10_dt[, p_val := pbinom(k,L,0.05,lower.tail=F)]
@@ -151,14 +179,31 @@ L10_dt[, reject_null := ifelse(p_val <= 0.05, 1, 0)]
 L10_dt[, power := cumsum(reject_null)/seq_along(reject_null)]
 L10_dt[, rep := 1:nrow(L10_dt)]
 
-ggplot(L10_dt, aes(x=rep,y=power)) +
+ggplot(L10_dt, aes(x=rep,y=power)) + #color=as.factor(L)
   geom_line() +
-  geom_hline(yintercept=.8, linetype='dashed') +
-  scale_x_continuous(name='Number of reps', limits=c(4700,5000)) +
-  scale_y_continuous(labels=scales::percent, limits=c(.71,.72)) +
-  ggtitle('How many reps until power stabilizes? \nL=60') +
-  theme_bw()
+  scale_x_continuous(name='Number of simulation runs', limits=c(1000,5000)) +
+  scale_y_continuous(name='Pct of runs that reject the null', labels=scales::percent, limits=c(.77,.83)) +
+  #ggtitle('How many runs until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
 
+ggplot(L10_dt, aes(x=rep,y=power)) + #color=as.factor(L)
+  geom_line() +
+  scale_x_continuous(name='Number of simulation runs', limits=c(4900,5000)) +
+  scale_y_continuous(name='Power', labels=scales::percent_format(accuracy = 0.1), limits=c(.812,.816)) +
+  #ggtitle('How many runs until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
+
+p2 <- ggplot(dt_v2, aes(x=rep,y=power)) + #color=as.factor(L)
+  geom_line() +
+  scale_x_continuous(name='Number of reps', limits=c(1000,4500)) +
+  scale_y_continuous(labels=scales::percent, limits=c(.75,.85)) +
+  ggtitle('How many reps until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=14)) 
 
 
 

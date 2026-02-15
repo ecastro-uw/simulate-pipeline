@@ -33,7 +33,7 @@ prep_configs <- function(config_dir, out_dir){
                   fit_model = as.character(config_sim$fit_model),
                   t = config_sim$t,
                   theta = config_sim$theta,
-                  signal_noise_ratio = config_sim$signal_noise_ratio,
+                  signal_noise_ratio = as.numeric(config_sim$signal_noise_ratio),
                   p.s = config_sim$p.s,
                   y0 = config_sim$y0,
                   B = config_sim$B,

@@ -2,7 +2,7 @@
 # Coverage adjustment plots
 
 # Which run version id do you want to examine?
-version_id <- '20260124.01' 
+version_id <- '20260203.01' 
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -18,7 +18,7 @@ load_one_file <- function(file){
   dt[, param_id := param]
   dt[, batch_id := as.numeric(str_extract(file, "(?<=_b)\\d+"))]
 }
-list_of_files <- list.files(dir, pattern=paste0("coverage_"), full.names = T)
+list_of_files <- list.files(dir, pattern=paste0("coverage_p2_"), full.names = T)
 all_files <- rbindlist(lapply(list_of_files, load_one_file))
 
 # add parameter values
@@ -40,38 +40,24 @@ annotations$y <- 4
 p1 <- ggplot(all_files) +
   geom_density(aes(x=multiplier)) +
   geom_vline(xintercept=1,linetype='dashed') +
-  geom_label(data = annotations, aes(x=x, y=y, label=label)) +
+  #geom_label(data = annotations, aes(x=x, y=y, label=label)) +
   scale_y_continuous(name="density") +
-  facet_grid(L_lab~theta_lab) +
+  #facet_grid(L_lab~theta_lab) +
   theme_bw() +
   ggtitle('Distribution of multiplier across simulation runs')
 
 # compare pre- and post-adjusted coverage
-plot2_dt <- melt(all_files,
-                 id.vars = c('L_lab', 'theta_lab'),
-                 measure.vars=c('coverage_pre', 'coverage_post'),
-                 value.name='coverage')
-plot2_dt[, variable := gsub('coverage_','', variable)]
-
-p2 <- ggplot(plot2_dt) +
-  geom_density(aes(x=coverage, color=variable)) +
-  facet_grid(L_lab~theta_lab) +
-  theme_bw() +
-  theme(legend.title = element_blank()) +
-  ggtitle('Distribution of coverage across simulation runs')
-
-p3 <- ggplot(all_files) +
+p2 <- ggplot(all_files) +
   geom_point(aes(x=coverage_pre, y=coverage_post), alpha=0.4) +
   geom_vline(xintercept = 0.95, linetype='dashed') +
   geom_hline(yintercept = 0.95, linetype='dashed') +
-  facet_grid(L_lab~theta_lab) +
+  #facet_grid(L_lab~theta_lab) +
   theme_bw()
   
 
 pdf(file.path(root,'coverage_plots.pdf'), width=11, height=6)
 p1
 p2
-p3
 dev.off()
 
 
