@@ -107,17 +107,8 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
       
     }
 
-    # Return smallest M once M_low and M_high are within tol apart or
-    # max_iter has been reached. 
-    if(cov_low==0.95){
-      return(M_low)
-    } else if(cov_mid==0.95){
-      return(M_mid)
-    } else if(cov_high==0.95){
-      return(M_high)
-    } else { 
-      return(M_low)
-    }
+    # Return M high 
+    return(M_high)
   }
 
   multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
