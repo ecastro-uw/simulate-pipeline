@@ -70,26 +70,55 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
 
   }
   
-  adj_and_check <- function(M, dt_summary = dt_summary, target_cov = 0.95){
+  # Step 4: Find the value of M using bisection method
+  bisect_for_coverage <- function(dt, target_cov = 0.95, tol = 1e-6, max_iter = 25) {
+
+    # Initialize bounds
+    M_low <- 0
+    M_high <- 50
+
+    # Get coverage at bounds
+    cov_low <- calc_adj_coverage(M_low, dt, by_draw = FALSE)
+    cov_high <- calc_adj_coverage(M_high, dt, by_draw = FALSE)
+
+    diff <- cov_high - cov_low
+    iter <- 0
     
-    coverage <- calc_adj_coverage(M, dt_summary, by_draw=F)
+    cov_dt <- data.table()
+    # Bisection loop
+    while (diff>tol & iter < max_iter){
+      # continue bisecting until small enough interval or reach max iter
+      M_mid <- (M_low + M_high) / 2
+      cov_mid <- calc_adj_coverage(M_mid, dt, by_draw = FALSE)
     
-    # Calc deviation from target coverage
-    #val <- (coverage - target_cov)^2
-    val <- ((coverage - target_cov)^2)+((M-1)^2/100000)
-    return(val)
+      one_row <- data.table(iter=iter, low = M_low, high = M_high, mid = M_mid, coverage = cov_mid)
+      cov_dt <- rbind(cov_dt, one_row)
+      
+      # Update bounds
+      if (cov_mid < target_cov) {
+        M_low <- M_mid
+        cov_low <- cov_mid
+      } else {
+        M_high <- M_mid
+        cov_high <- cov_mid
+      }
+      diff <- cov_high - cov_low
+      iter <- iter + 1
+      
+    }
+
+    # Return M high 
+    return(M_high)
   }
-  
-  # Step 4: Find the value of M that minimizes the difference between empirical and target coverage
-  M_grid <- seq(0.1, 5, by = 0.01)
-  obj_values <- sapply(M_grid, function(m) adj_and_check(m, dt_summary))
-  multiplier <- M_grid[which.min(obj_values)]
+
+  multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
   
   # Step 5: Apply the multiplier to each draw
   coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
   coverage_post <- coverage_results$coverage_post
   
   # Step 6: Calculate p-value (what % of draws are less than or equal to the observed value?)
+  draws_adj <- coverage_results$draws_adj
   draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
   
   

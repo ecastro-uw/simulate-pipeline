@@ -1,8 +1,7 @@
 # Make power curve
 
-
 # Which run version id do you want to examine?
-version_id <- '20260113.03' #'20251201.04'
+version_id <- '20260203.05'
 # Do you want to look at pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'adj' 
 
@@ -15,27 +14,15 @@ params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulation
 
 # define function for processing each file
 load_file <- function(file){
+  # define ids
   param <- as.numeric(str_extract(file, "(?<=_p)\\d+"))
   batch <- as.numeric(str_extract(file, "(?<=_b)\\d+"))
   n_draws <- params[param_id==param, d]
-  if(grepl("pred_adj", file)){
-    # post-adjusted results
-    dt <- fread(file)[time_id==0, .(rep_id, location_id, time_id, p_val)]
-  } else {
-    # pre-adjusted results
-    
-    # load obs
-    obs_dt <- fread(paste0(dir,'/obs_p', param, '_b', batch, '.csv'))
-    # load preds
-    dt <- fread(file)[time_id==0]
-    # combine
-    dt <- merge(obs_dt, dt, by=c('rep_id', 'location_id', 'time_id'))
-    # calc p-value
-    draw_cols <- paste0('draw_',1:n_draws)
-    dt$p_val <- rowSums(dt[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
-    dt <- dt[, (draw_cols) := NULL]
-    dt$y <- NULL
-  }
+  
+  # load data
+  dt <- fread(file)[time_id==0, .(rep_id, location_id, time_id, p_val)]
+  
+  # tally up number of stat sig locs per rep
   dt[, verdict := ifelse(p_val<0.05,1,0)]
   rep_dt <- dt[, list(k = sum(verdict)), by=rep_id]
   rep_dt[, param_id := param]
@@ -46,31 +33,63 @@ load_file <- function(file){
 # combine reps and calculate p-value/verdict for each rep
 list_of_files <- list.files(dir, pattern=paste0("pred_",pred_type), full.names = T)
 files_all <- rbindlist(lapply(list_of_files, load_file))
-files_all <- merge(files_all, params[,.(param_id, L, p.s)], by='param_id')
+files_all <- merge(files_all, params[,.(param_id, L, theta, signal_noise_ratio)], by='param_id')
 files_all[, p_val := pbinom(k,L,0.05,lower.tail=F)]
 files_all[, reject_null := ifelse(p_val <= 0.05, 1, 0)]
 
 # calculate power for each parameter configuration
-power_dt <- files_all[, list(power = (sum(reject_null)/.N)*100), by=c('param_id','p.s','L')]
+power_dt <- files_all[, list(power = (sum(reject_null)/.N)*100),
+                      by=c('param_id','theta','L','signal_noise_ratio')]
 
-lng_dt <- power_dt[order(p.s, L)]
-wide_dt <- dcast(lng_dt, p.s ~ L, value.var='power')
-fwrite(wide_dt, paste0(root,'/power_table_PRE.csv'))
-
-p2 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(p.s))) +
+# Make labels
+power_dt[, theta_lab := factor(theta, 
+                               levels=unique(power_dt$theta),
+                               labels=paste('theta =', unique(power_dt$theta)))]
+# Plot
+p0 <- ggplot(power_dt, aes(x=L,y=power, color=as.factor(signal_noise_ratio))) +
   geom_line() +
+  geom_point() +
   theme_bw() +
-  #ggtitle("Adjusted") +
-  ggtitle(paste0('theta=',unique(params$theta),
-                 ', sigma.f=',unique(params$sigma.f),
-                 ', sigma.s=', unique(params$sigma.s))) +
-  scale_color_discrete(name='p.s') +
-  scale_x_continuous(limits=c(10,60), n.breaks=6) +
-  scale_y_continuous(limits = c(20,100), n.breaks=5) 
+  theme(axis.text = element_text(size=12)) +
+  facet_wrap(~theta_lab) +
+  scale_color_discrete(name='theta:sigma') +
+  scale_x_continuous(name = "Number of Locations") +
+  #scale_x_continuous(limits=c(10,60), n.breaks=6, name="Number of Locations") +
+  scale_y_continuous(name="Power", limits=c(40,100),
+                     labels = scales::label_percent(scale = 1)) 
 
-pdf(paste0(root,'/power_curve_POST.pdf'), width=7,height=5)
-p2
+
+pdf(paste0(root,'/power_curve_adj.pdf'), width=7,height=5)
+p0
 dev.off()
+
+pdf(paste0(root,'/power_curves_side_by_side.pdf'), width=10,height=5)
+p0 + p1 + plot_layout(guides = "collect") 
+dev.off()
+
+
+small_dt <- power_dt[signal_noise_ratio==0.45]
+ggplot(small_dt, aes(x=L,y=power)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = 80, linetype='dotted') +
+  theme_bw() +
+  theme(axis.text = element_text(size=11)) +
+  scale_x_continuous(name = "Number of Locations", breaks=seq(20,100,20)) +
+  scale_y_continuous(name="Power",
+                     labels = scales::label_percent(scale = 1)) +
+  ggtitle('Signal-to-Noise Ratio: 0.45')
+
+
+ggplot(files_all[signal_noise_ratio==.45 & L==40], aes(x=k)) +
+  geom_histogram(binwidth=1, fill='lightblue', color='white') +
+  geom_vline(xintercept = 3.5, linetype='dashed') +
+  scale_x_continuous(name="Number of stat. sig. locations (k) \nOut of 40 total") +
+  scale_y_continuous(name="Number of simulation runs") +
+  ggtitle('Distribution of k across 50K runs (critical value = 4)') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
 
 # Combine plots into a grid
 plot_list <- list(p1,p2)
@@ -88,6 +107,12 @@ pdf(paste0(root,'/power_curve_BOTH.pdf'), width=11,height=5)
 plot_b
 dev.off()
 
+
+
+# reshape and save 
+lng_dt <- power_dt[order(p.s, L)]
+wide_dt <- dcast(lng_dt, p.s ~ L, value.var='power')
+fwrite(wide_dt, paste0(root,'/power_table_PRE.csv'))
 
 # Once the power table has been saved, no need to re-summarize
 pre_wide <- fread(paste0(root,'/power_table_PRE.csv'))
@@ -144,20 +169,41 @@ ggplot(power_dt, aes(x=L, y=power)) +
   theme(plot.title = element_text(size = 10))
 
 
-# for a given # of locations, calculate power by rep
-L10_files <- list.files(dir, pattern="pred_adj_p1", full.names = T)
+# for a given parameter set, calculate power by rep to determine min number of reps for stabilization
+L10_files <- list.files(dir, pattern=paste0("pred_",pred_type,"_p31"), full.names = T)
 L10_dt <- rbindlist(lapply(L10_files, load_file))
+L10_dt <- merge(L10_dt, params[,.(param_id, L)], by='param_id')
+L10_dt[, p_val := pbinom(k,L,0.05,lower.tail=F)]
+L10_dt[, reject_null := ifelse(p_val <= 0.05, 1, 0)]
+
 L10_dt[, power := cumsum(reject_null)/seq_along(reject_null)]
 L10_dt[, rep := 1:nrow(L10_dt)]
 
-ggplot(L10_dt, aes(x=rep,y=power)) +
+ggplot(L10_dt, aes(x=rep,y=power)) + #color=as.factor(L)
   geom_line() +
-  geom_hline(yintercept=.8, linetype='dashed') +
-  scale_x_continuous(name='Number of reps') +
-  scale_y_continuous(labels=scales::percent) +
-  ggtitle('How many reps until power stabilizes? \nL=10') +
-  theme_bw()
+  scale_x_continuous(name='Number of simulation runs', limits=c(1000,5000)) +
+  scale_y_continuous(name='Pct of runs that reject the null', labels=scales::percent, limits=c(.77,.83)) +
+  #ggtitle('How many runs until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
 
+ggplot(L10_dt, aes(x=rep,y=power)) + #color=as.factor(L)
+  geom_line() +
+  scale_x_continuous(name='Number of simulation runs', limits=c(4900,5000)) +
+  scale_y_continuous(name='Power', labels=scales::percent_format(accuracy = 0.1), limits=c(.812,.816)) +
+  #ggtitle('How many runs until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=12),
+        axis.title = element_text(size=12)) 
+
+p2 <- ggplot(dt_v2, aes(x=rep,y=power)) + #color=as.factor(L)
+  geom_line() +
+  scale_x_continuous(name='Number of reps', limits=c(1000,4500)) +
+  scale_y_continuous(labels=scales::percent, limits=c(.75,.85)) +
+  ggtitle('How many reps until power stabilizes? \nL=40') +
+  theme_bw() +
+  theme(axis.text = element_text(size=14)) 
 
 
 

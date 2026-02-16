@@ -2,7 +2,7 @@
 # Coverage adjustment plots
 
 # Which run version id do you want to examine?
-version_id <- '20260113.01' 
+version_id <- '20260215.01' 
 
 # directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -22,58 +22,57 @@ list_of_files <- list.files(dir, pattern=paste0("coverage_"), full.names = T)
 all_files <- rbindlist(lapply(list_of_files, load_one_file))
 
 # add parameter values
-all_files <- merge(all_files, params[, .(param_id, theta, L)], by='param_id')
+all_files <- merge(all_files, params[, .(param_id, signal_noise_ratio, L)], by='param_id')
 all_files[, L_lab := factor(L, 
                             levels=unique(all_files$L),
                             labels=paste('L =', unique(all_files$L)))]
-all_files[, theta_lab := factor(theta, 
-                            levels=unique(all_files$theta),
-                            labels=paste('theta =', unique(all_files$theta)))]
+all_files[, SNR_lab := factor(signal_noise_ratio, 
+                            levels=unique(all_files$signal_noise_ratio),
+                            labels=paste('SNR =', unique(all_files$signal_noise_ratio)))]
 
 # create an annotation file showing the number of reps with multiplier<1
-annotations <- all_files[, .(pct_shrink = (sum(multiplier<1)/.N)*100), by=c('L_lab', 'theta_lab')]
-annotations[, label := paste0(pct_shrink,'% <1')]
-annotations$x <- 1.7
-annotations$y <- 4
+#annotations <- all_files[, .(pct_shrink = (sum(multiplier<1)/.N)*100), by=c('L_lab', 'theta_lab')]
+#annotations[, label := paste0(round(pct_shrink,1),'% <1')]
+#annotations$x <- 1.5
+#annotations$y <- 4
 
 # plot multiplier
 p1 <- ggplot(all_files) +
   geom_density(aes(x=multiplier)) +
-  geom_label(data = annotations, aes(x=x, y=y, label=label)) +
+  geom_vline(xintercept=1,linetype='dashed') +
+  #geom_label(data = annotations, aes(x=x, y=y, label=label)) +
   scale_y_continuous(name="density") +
-  facet_grid(L_lab~theta_lab) +
+  facet_grid(L_lab~SNR_lab) +
   theme_bw() +
   ggtitle('Distribution of multiplier across simulation runs')
 
 # compare pre- and post-adjusted coverage
-plot2_dt <- melt(all_files,
-                 id.vars = c('L_lab', 'theta_lab'),
-                 measure.vars=c('coverage_pre', 'coverage_post'),
-                 value.name='coverage')
-plot2_dt[, variable := gsub('coverage_','', variable)]
-
-p2 <- ggplot(plot2_dt) +
-  geom_density(aes(x=coverage, color=variable)) +
-  facet_grid(L_lab~theta_lab) +
-  theme_bw() +
-  theme(legend.title = element_blank()) +
-  ggtitle('Distribution of coverage across simulation runs')
-
-p3 <- ggplot(all_files) +
+p2 <- ggplot(all_files) +
   geom_point(aes(x=coverage_pre, y=coverage_post), alpha=0.4) +
   geom_vline(xintercept = 0.95, linetype='dashed') +
   geom_hline(yintercept = 0.95, linetype='dashed') +
-  facet_grid(L_lab~theta_lab) +
+  facet_grid(L_lab~SNR_lab) +
   theme_bw()
   
 
 pdf(file.path(root,'coverage_plots.pdf'), width=11, height=6)
 p1
 p2
-p3
 dev.off()
 
 
+# Confirm that final coverage is no more than one interval out of Lx4 total intervals
+# away from target
+
+small_dt <- unique(all_files[signal_noise_ratio==0.65,.(L, obs_cov = coverage_post)])
+small_dt[, SS := L*4]
+small_dt[, best := ceiling(.95*SS)]
+small_dt[, best_cov := best/SS]
+small_dt[, limit := best+1]
+small_dt[, limit_cov := limit/SS]
+small_dt[, obs := obs_cov*SS]
+small_dt <- small_dt[,.(L, SS, obs, best, limit, obs_cov, best_cov, limit_cov)]
+fwrite(small_dt, file.path(root,'small_dt_snr_0.65.csv'))
 
 ## -- Investigate large multipliers -- ##
 sort(all_files[theta==0.4 & L==10]$multiplier)[995:1000]
