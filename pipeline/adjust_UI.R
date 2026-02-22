@@ -71,7 +71,7 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
   }
   
   # Step 4: Find the value of M using bisection method
-  bisect_for_coverage <- function(dt, target_cov = 0.95, tol = 1e-6, max_iter = 25) {
+  bisect_for_coverage <- function(dt, target_cov = 0.95, max_iter = 40) {
 
     # Initialize bounds
     M_low <- 0
@@ -86,8 +86,8 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
     
     cov_dt <- data.table()
     # Bisection loop
-    while (diff>tol & iter < max_iter){
-      # continue bisecting until small enough interval or reach max iter
+    while (iter < max_iter){
+      # continue bisecting until reach max iter
       M_mid <- (M_low + M_high) / 2
       cov_mid <- calc_adj_coverage(M_mid, dt, by_draw = FALSE)
     
@@ -104,7 +104,6 @@ adjust_UI <- function(data, results_draws, problem_log, configs){
       }
       diff <- cov_high - cov_low
       iter <- iter + 1
-      
     }
 
     # Return M high 

@@ -130,21 +130,27 @@ for (v in version_list){
   final_dt <- rbind(final_subset, final_dt)
 }
 
-### 5. Make the results plot
-pdf(paste0(root,'/snr_vs_L.pdf'), width=6, height=4)
-ggplot(final_dt, aes(y=L, x = signal_noise_ratio)) +
+
+### 5. Translate SNR to reflect the realized sd of the simulations
+final_dt[, SNR_new := signal_noise_ratio / 3.37]
+
+### 6. Make the results plot
+pdf(paste0(root,'/snr_vs_L_UPDATED.pdf'), width=6, height=4)
+ggplot(final_dt, aes(y=L, x = SNR_new)) +
+  geom_smooth(se=FALSE) +
   geom_point() +
-  geom_smooth() +
-  scale_x_continuous(name='Signal-to-noise ratio', limits=c(0.4,1), n.breaks=7) +
-  scale_y_continuous(name='Min. number of locations required to reach >=80% power', limits=c(5,75), n.breaks=8) +
+  scale_x_continuous(name='Signal-to-noise ratio', limits=c(0.11,0.3)) +
+  scale_y_continuous(name='Number of Locations', limits=c(0,80), n.breaks=10) +
   theme_bw() +
+  ggtitle('Sample Size Required to Achieve 80% Power \nat Varying Signal-to-Noise Ratios') +
   #ggtitle('How many locations are needed to reach 80% power at varying levels of noise?') +
-  theme(axis.text = element_text(size=12), axis.title=element_text(size=12), plot.title = element_text(size=11)) 
+  theme(axis.text = element_text(size=12), axis.title=element_text(size=12),
+        plot.title = element_text(size=11, hjust = 0.5)) 
 dev.off()
 
 
 # improving the figure
-ggplot(final_dt, aes(y=L, x = signal_noise_ratio)) +
+ggplot(final_dt, aes(y=L, x = SNR_new)) +
   geom_smooth(se=FALSE) +
   geom_point() +
   scale_x_continuous(name='Signal-to-Noise Ratio', limits=c(0.4,1), n.breaks=7) +
