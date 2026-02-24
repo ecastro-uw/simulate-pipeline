@@ -20,12 +20,16 @@ full_data <- fread(input_data_path)
 
 # ---------------------------------------------------------------------------
 # Function: calculate realized_sd for a single state
+# Returns a list: realized_sd, n_counties_total, n_counties_incomplete
 # ---------------------------------------------------------------------------
 calc_realized_sd <- function(state_location_id) {
 
   # Counties belonging to this state
   locs_dt <- hierarchy[parent_id == state_location_id, .(location_id, location_name)]
-  if (nrow(locs_dt) == 0) return(NA_real_)
+  n_total <- nrow(locs_dt)
+  incomplete <- function(n_complete) list(realized_sd = NA_real_, n_counties_total = n_total,
+                                          n_counties_incomplete = n_total - n_complete)
+  if (n_total == 0) return(incomplete(0))
 
   # Determine date of first mandate imposition by county
   events_dt <- full_data[location_id %in% locs_dt$location_id & top_category %like% 'Restaurants',
@@ -33,7 +37,7 @@ calc_realized_sd <- function(state_location_id) {
   events_dt[, lag := shift(mandate, fill = 0), by = location_id]
   events_dt <- events_dt[mandate != lag]
   events_dt <- events_dt[, .SD[1], by = location_id]
-  if (nrow(events_dt) == 0) return(NA_real_)
+  if (nrow(events_dt) == 0) return(incomplete(0))
 
   # Load mobility data up to the last mandate date in the state
   mobility_dt <- full_data[location_id %in% locs_dt$location_id & top_category %like% 'Restaurants',
@@ -43,7 +47,7 @@ calc_realized_sd <- function(state_location_id) {
   # --- Baseline: first 8 weeks of 2020 (56 days per county) ---
   baseline_dt <- mobility_dt[date >= '2020-01-01' & date < '2020-02-26']
   complete_baseline <- baseline_dt[, .N, by = location_id][N == 56, location_id]
-  if (length(complete_baseline) == 0) return(NA_real_)
+  if (length(complete_baseline) == 0) return(incomplete(0))
 
   baseline_dt <- baseline_dt[location_id %in% complete_baseline]
   baseline_dt[, week_id := rep(1:8, each = 7), by = location_id]
@@ -59,7 +63,7 @@ calc_realized_sd <- function(state_location_id) {
     mobility_dt[, .N, by = location_id][N == 28, location_id],
     complete_baseline
   )
-  if (length(complete_locs) == 0) return(NA_real_)
+  if (length(complete_locs) == 0) return(incomplete(0))
   mobility_dt <- mobility_dt[location_id %in% complete_locs]
 
   # Summarize to weekly level and log-transform
@@ -73,9 +77,13 @@ calc_realized_sd <- function(state_location_id) {
   # Week-to-week first differences
   weekly_dt[, delta := y_norm - shift(y_norm, type = 'lag'), by = location_id]
   weekly_dt <- weekly_dt[!is.na(delta)]
-  if (nrow(weekly_dt) == 0) return(NA_real_)
+  if (nrow(weekly_dt) == 0) return(incomplete(0))
 
-  return(sd(weekly_dt$delta))
+  list(
+    realized_sd          = sd(weekly_dt$delta),
+    n_counties_total     = n_total,
+    n_counties_incomplete = n_total - length(complete_locs)
+  )
 }
 
 # ---------------------------------------------------------------------------
@@ -85,14 +93,15 @@ results <- rbindlist(lapply(seq_len(nrow(us_states)), function(i) {
   sid   <- us_states$location_id[i]
   sname <- us_states$location_name[i]
   message(sprintf("[%d/%d] %s", i, nrow(us_states), sname))
-  sd_val <- tryCatch(
+  res <- tryCatch(
     calc_realized_sd(sid),
     error = function(e) {
       message(sprintf("  ERROR: %s", e$message))
-      NA_real_
+      list(realized_sd = NA_real_, n_counties_total = NA_integer_, n_counties_incomplete = NA_integer_)
     }
   )
-  data.table(location_id = sid, realized_sd = sd_val)
+  data.table(location_id = sid, realized_sd = res$realized_sd,
+             n_counties_total = res$n_counties_total, n_counties_incomplete = res$n_counties_incomplete)
 }))
 
 # Save results
