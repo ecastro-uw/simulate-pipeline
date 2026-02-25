@@ -71,6 +71,9 @@ pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_
 cl <- makeCluster(8)
 registerDoParallel(cl)
 
+# Set the seed
+set.seed(configs$seed + inputs$param_id * 1000 + batch_id)
+
 # Run parallel loop
 results <- foreach(
   r = 1:param_set$R,
