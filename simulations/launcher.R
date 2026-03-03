@@ -8,6 +8,7 @@ source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
 source(file.path(code_dir, 'helper_functions/throttle_jobs.R'))
 source(file.path(code_dir, 'simulations/set_up.R'))
 source(file.path(code_dir, 'simulations/prep_configs.R'))
+library(yaml)
 
 ## THROTTLING SETTINGS ##
 max_concurrent_jobs <- 100  # Maximum number of jobs to run at once

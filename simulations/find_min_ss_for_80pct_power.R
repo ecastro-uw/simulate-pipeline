@@ -11,9 +11,11 @@ library(stringr)
 library(yaml)
 
 # Which run version id do you want to examine?
-version_id <- '20260203.01'
+version_id <- '20260224.01'
 # Do you want to look at pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'adj' 
+# What is the scaling factor between parameter SNR and empirical/realized SNR?
+scalar <- 1.32
 
 # Directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -24,7 +26,7 @@ params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulation
 
 ### 1. Load results and calculate power by L and signal-to-noise ratio
 
-# Define function for processing each file
+# Define function for processing each prediction file
 load_file <- function(file){
   # define ids
   param <- as.numeric(str_extract(file, "(?<=_p)\\d+"))
@@ -94,9 +96,11 @@ for (i in seq_len(nrow(L_star_dt))) {
 }
 
 # stop. use the above configs with launcher.r
+# come back to this script and run lines 1-44
+# then proceed from line 103
 
 ### 4. For each signal-to-noise ratio, identify the smallest L where power exceeds 80%
-version_list <- paste0('20260203.0', 2:6)
+version_list <- c(paste0('20260224.0', 2:4), paste0('20260225.0', 1:3))
 
 final_dt <- data.table()
 for (v in version_list){
@@ -132,18 +136,17 @@ for (v in version_list){
 
 
 ### 5. Translate SNR to reflect the realized sd of the simulations
-final_dt[, SNR_new := signal_noise_ratio / 3.37]
+final_dt[, SNR_new := signal_noise_ratio / scalar]
 
 ### 6. Make the results plot
-pdf(paste0(root,'/snr_vs_L_UPDATED.pdf'), width=6, height=4)
-ggplot(final_dt, aes(y=L, x = SNR_new)) +
+pdf(paste0(root,'/snr_vs_L.pdf'), width=6, height=4)
+ggplot(final_dt, aes(x = SNR_new, y = L)) +
   geom_smooth(se=FALSE) +
   geom_point() +
   scale_x_continuous(name='Signal-to-noise ratio', limits=c(0.11,0.3)) +
   scale_y_continuous(name='Number of Locations', limits=c(0,80), n.breaks=10) +
   theme_bw() +
   ggtitle('Sample Size Required to Achieve 80% Power \nat Varying Signal-to-Noise Ratios') +
-  #ggtitle('How many locations are needed to reach 80% power at varying levels of noise?') +
   theme(axis.text = element_text(size=12), axis.title=element_text(size=12),
         plot.title = element_text(size=11, hjust = 0.5)) 
 dev.off()
@@ -153,7 +156,7 @@ dev.off()
 ggplot(final_dt, aes(y=L, x = SNR_new)) +
   geom_smooth(se=FALSE) +
   geom_point() +
-  scale_x_continuous(name='Signal-to-Noise Ratio', limits=c(0.4,1), n.breaks=7) +
+  scale_x_continuous(name='Signal-to-Noise Ratio', limits=c(0.25,0.75), breaks=seq(0.25,0.75,0.1)) +
   scale_y_continuous(name='Number of Locations', limits=c(0,80), n.breaks=10) +
   theme_bw() +
   ggtitle('Sample Size Required to Achieve 80% Power \nat Varying Signal-to-Noise Ratios') +

@@ -1,5 +1,8 @@
 # Calculate empirical SD
 
+library(data.table)
+library(stringr)
+
 version_id <- '20260216.01'
 
 # directory
@@ -48,62 +51,6 @@ ggplot(summary_dt, aes(x=sigma.f,y=sigma.r)) +
 dev.off()
 
 
-
-### Try summarizing by group ###
-
-# Calc the mean, sd, and sample size of each location-run
-loc_rep_stats <- all_files[, .(n=.N, mu=mean(y), s=sd(y)), by=.(param_id, batch_id, rep_id, location_id)]
-# Alternatively, calc mean, sd and SS of each simulation run
-loc_rep_stats <- all_files[, .(n=.N, mu=mean(y), s=sd(y)), by=.(param_id, batch_id, rep_id)]
-
-
-# Combine SDs across location-runs to get a single SD for each param_id
-summary_dt_v2 <- data.table(param_id=1:nrow(params), sigma.r=as.numeric(''))
-for (param in 1:nrow(params)){
-  
-  # subset to location-runs
-  small_stats <- loc_rep_stats[param_id==param]
-  
-  # combine across reps
-  N <- small_stats[, sum(n)]
-  grand_mean <- small_stats[, sum(n * mu)] / N
-  var_within <- small_stats[, sum(n * s^2)] / N
-  var_between <- small_stats[, sum(n * (mu - grand_mean)^2)] / N
-  sd_total <- sqrt(var_within + var_between)
-  summary_dt_v2[param_id==param, sigma.r:= sd_total]
-}
-
-# Add parameter values
-summary_dt_v2 <- merge(params[, .(param_id, L, sigma.f, sigma.s, theta, p.s)], summary_dt_v2, by='param_id')
-
-# make labels
-summary_dt_v2[, L_lab := factor(L, 
-                             levels=unique(summary_dt_v2$L),
-                             labels=paste('L =', unique(summary_dt_v2$L)))]
-summary_dt_v2[, p_lab := factor(p.s, 
-                             levels=unique(summary_dt_v2$p.s),
-                             labels=paste('p_s =', unique(summary_dt_v2$p.s)))]
-
-# plot
-pdf(file.path(root,'realized_sigma_v2.pdf'), width=7, height=5)
-ggplot(summary_dt_v2, aes(x=sigma.f,y=sigma.r)) +
-  geom_smooth(method='lm', se=FALSE) +
-  geom_point() +
-  scale_x_continuous(name='sigma parameter', breaks=seq(1,10,2)) + 
-  scale_y_continuous(name='empirical sigma', breaks=seq(0,50,10)) + 
-  facet_grid(p_lab~L_lab) +
-  theme_bw() +
-  ggtitle('Relationship between noise parameters and empirical standard deviation')
-dev.off()
-
-
 # summarize the relationship between sigma and sigma.r when p.s=5
-lm(sigma.r ~ sigma.f, data=summary_dt[p.s==0.75])
+lm(sigma.r ~ sigma.f, data=summary_dt[p.s==0.5])
 
-
-###
-dt_by_param <- loc_rep_stats[, .(N=sum(n),
-                                 grand_mean=sum(n*mu)/sum(n),
-                                 var_within=sum(n*s^2)/sum(n),
-                                 var_between=sum(n*(mu-grand_mean)^2)/sum(n)), by=param_id]
-dt_by_param[, sigma.r := sqrt(var_within + var_between)]
