@@ -1,4 +1,4 @@
-# Sim launcher
+# Launch the pipeline with simulated data
 
 # Define root directory
 code_dir <- "/ihme/homes/ems2285/repos/simulate-pipeline"
@@ -6,7 +6,7 @@ out_root <- "/ihme/scratch/users/ems2285/thesis/outputs/simulations/"
 source(file.path(code_dir, 'helper_functions/get_version.R'))
 source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
 source(file.path(code_dir, 'helper_functions/throttle_jobs.R'))
-source(file.path(code_dir, 'simulations/set_up.R'))
+source(file.path(code_dir, 'helper_functions/set_up.R'))
 source(file.path(code_dir, 'simulations/prep_configs.R'))
 library(yaml)
 
@@ -44,7 +44,7 @@ for (pc in 1:nrow(params)){
 
     # launch the jobs
     sbatch(jobname = paste0('param_',pc,'_batch_',b),
-           code = file.path(code_dir, "simulations/pipeline_by_batch.R"),
+           code = file.path(code_dir, "simulations/0_pipeline_by_batch.R"),
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
            mem = '10G', #if running large L, may need to increase but 6G is usually sufficient
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?

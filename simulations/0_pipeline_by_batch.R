@@ -35,7 +35,7 @@ for (file in list_of_files){
 }
   
 # Source the pipeline function
-source(file.path(code_dir, "simulations/pipeline.R"))
+source(file.path(code_dir, "pipeline/0_pipeline.R"))
 
 # Load parameter information
 param_set <- fread(param_path)[param_id == inputs$param_id]
@@ -102,7 +102,7 @@ results <- foreach(
   }
 
   # Run pipeline for this rep
-  one_rep <- pipeline(param_set, pipeline_inputs)
+  one_rep <- pipeline(pipeline_inputs, param_set)
   
   # (1) Observations
   obs_dt <- one_rep$obs_dt

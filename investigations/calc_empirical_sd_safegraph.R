@@ -213,6 +213,7 @@ dev.off()
 
 #####
 # Make some plots to vet the assumptions involved with combining all counties in a state
+# (Run lines 1-103 and then skip down here)
 all_weekly <- rbindlist(lapply(seq_len(nrow(us_states)), function(i) {
   sid   <- us_states$location_id[i]
   sname <- us_states$location_name[i]

@@ -1,31 +1,37 @@
 # pipeline
 
-pipeline <- function(param_set, pipeline_inputs){
+pipeline <- function(pipeline_inputs, param_set=NULL){
   
   code_dir <- pipeline_inputs$code_dir
+  configs <- pipeline_inputs$configs
   
-  source(file.path(code_dir,'simulations/simulate_data.R'))
-  source(file.path(code_dir,'pipeline/make_predictions.R'))
-  source(file.path(code_dir,'pipeline/ensemble.R'))
-  source(file.path(code_dir,'pipeline/adjust_UI.R'))
+  source(file.path(code_dir,'simulations/1_simulate_data.R'))
+  source(file.path(code_dir,'pipeline/1_prep_data.R'))
+  source(file.path(code_dir,'pipeline/2_make_predictions.R'))
+  source(file.path(code_dir,'pipeline/3_ensemble.R'))
+  source(file.path(code_dir,'pipeline/4_adjust_UI.R'))
   
   ## PIPELINE 
-  # (1) Simulate data
+  # (1) Simulate or prep data
   sim_start <- Sys.time()
-  sim_dat <- simulate_data(param_set, pipeline_inputs)
+  if (data=='simulated'){
+    data <- simulate_data(param_set, pipeline_inputs)
+  } else if (data=='real'){
+    data <- prep_data()
+  }
   sim_end <- Sys.time()
   sim_time <- sim_end - sim_start
   
   # (2) Make predictions
   pred_start <- Sys.time()
-  preds_by_model <- make_predictions(sim_dat, pipeline_inputs)
+  preds_by_model <- make_predictions(data, pipeline_inputs)
   sigmas_dt <- unique(preds_by_model[,.(model, time_id, sigma)])
   pred_end <- Sys.time()
   pred_time <- pred_end - pred_start
   
   # (3) Ensemble
   ensemble_start <- Sys.time()
-  ensemble_out_list <- ensemble(sim_dat, preds_by_model, pipeline_inputs, param_set)
+  ensemble_out_list <- ensemble(data, preds_by_model, pipeline_inputs)
   unadj_results <- ensemble_out_list$unadj_results
   weights_dt <- ensemble_out_list$weights
   ensemble_end <- Sys.time()
@@ -33,20 +39,20 @@ pipeline <- function(param_set, pipeline_inputs){
   
   # (4) Adjust the UI
   adjust_start <- Sys.time()
-  adjusted_results <- adjust_UI(sim_dat, unadj_results, pipeline_inputs$problem_log, pipeline_inputs$configs)
+  adjusted_results <- adjust_UI(data, unadj_results, pipeline_inputs$problem_log, configs)
   final_results <- adjusted_results$final_results
   adjust_end <- Sys.time()
   adjust_time <- adjust_end - adjust_start
   
   
   ## PREP RESULTS FOR OUTPUT
-  draw_cols <- paste0('draw_', 1:pipeline_inputs$configs$d)
+  draw_cols <- paste0('draw_', 1:configs$d)
   
   # (1) Observations
-  # sim_dat
+  # data
   
   # (2) Candidate model estimates
-  if(param_set$save_candidate_draws==T){
+  if(configs$save_candidate_draws==T){
     candidate_mod_output <- preds_by_model[, .SD, .SDcols = c('model','location_id', 'time_id', draw_cols)]
   } else {
     candidate_mod_output <- preds_by_model[, `:=` (q2.5 = apply(.SD, 1, quantile, 0.025),
@@ -57,14 +63,14 @@ pipeline <- function(param_set, pipeline_inputs){
   }
   
   # (3) Pre-adjustment ensemble estimates
-  forecast_target <- pipeline_inputs$configs$w - 1
+  forecast_target <- configs$w - 1
   
   # add p-value
-  unadj_results <- merge(unadj_results, sim_dat, by=c('location_id', 'time_id'))
+  unadj_results <- merge(unadj_results, data, by=c('location_id', 'time_id'))
   unadj_results$p_val <- rowSums(unadj_results[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/length(draw_cols)
   
-  if(param_set$save_pre_adj_draws==T){
-    if(param_set$save_all_pre_adj_time_steps==T){
+  if(configs$save_pre_adj_draws==T){
+    if(configs$save_all_pre_adj_time_steps==T){
       # save out draws all time steps
       pre_adj_output <- unadj_results[, .SD, .SDcols = c('location_id', 'time_id', 'p_val', draw_cols)]
     } else {
@@ -73,7 +79,7 @@ pipeline <- function(param_set, pipeline_inputs){
                                       .SD, .SDcols = c('location_id', 'time_id', 'p_val', draw_cols)]
     }
   } else {
-    if(param_set$save_all_pre_adj_time_steps==T){
+    if(configs$save_all_pre_adj_time_steps==T){
       # save out summary stats, all time steps
       pre_adj_output <- unadj_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                               q2.5 = apply(.SD, 1, quantile, 0.025),
@@ -103,8 +109,8 @@ pipeline <- function(param_set, pipeline_inputs){
   multiplier <- adjusted_results$multiplier
 
   # (7) Adjusted forecasts
-  if(param_set$save_draws==T){
-    if(param_set$save_all_time_steps==T){ 
+  if(configs$save_draws==T){
+    if(configs$save_all_time_steps==T){ 
       # save out draws, all time steps
       results_output <- final_results[, .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     } else{
@@ -113,7 +119,7 @@ pipeline <- function(param_set, pipeline_inputs){
                                       .SD, .SDcols = c('location_id', 'time_id','p_val', draw_cols)]
     }
   } else { 
-    if(param_set$save_all_time_steps==T){ 
+    if(configs$save_all_time_steps==T){ 
       # save out summary stats, all time steps
       results_output <- final_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
                                               q2.5 = apply(.SD, 1, quantile, 0.025),
@@ -142,7 +148,7 @@ pipeline <- function(param_set, pipeline_inputs){
   # (10) Time stamps
   time_stamps <- c(sim_time = sim_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
-  return(list(obs_dt = sim_dat,
+  return(list(obs_dt = data,
               candidate_mod_output = candidate_mod_output,
               pre_adj_output = pre_adj_output,
               coverage_pre = coverage_pre,

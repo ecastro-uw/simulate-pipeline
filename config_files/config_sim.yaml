@@ -44,9 +44,4 @@ L:
   - 80
   - 90
   - 100
-save_draws?: no
-save_all_time_steps?: no
-save_pre_adj_draws?: no
-save_all_pre_adj_time_steps?: no
-save_candidate_draws?: no
 ...

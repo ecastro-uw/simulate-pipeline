@@ -1,7 +1,7 @@
 # Ensemble
 # Ensemble candidate models to generate predictions with uncertainty by location and time step
 
-ensemble <- function(obs_dt, preds_dt, pipeline_inputs, param_set){
+ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
   
   source(file.path(pipeline_inputs$code_dir, "pipeline/model_performance_measures.R"))
   
@@ -42,7 +42,6 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs, param_set){
     
     # Take a weighted average of model preds to get the ensemble preds.
     weights_dt <- data.table(model = list_of_models, weight = weights)   #globally fit p_s
-    #weights_dt <- data.table(model = list_of_models, weight = c(1-param_set$p.s, param_set$p.s))   #known p_s
     preds_dt <- merge(preds_dt, weights_dt, by='model')
     
     # Calculate weighted average of each draw by location and time
