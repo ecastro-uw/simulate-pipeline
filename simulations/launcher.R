@@ -17,7 +17,7 @@ throttle_check_interval <- 30  # Seconds between checking job queue
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260216.01')
+#out_dir <- file.path(out_root,'20260314.01')
 
 ## 2. CONFIG FILE ##
 params <- prep_configs(config_dir = file.path(code_dir, "config_files"), 
@@ -28,7 +28,7 @@ params <- prep_configs(config_dir = file.path(code_dir, "config_files"),
 ## 3. LAUNCH JOBS ##
 # Launch a batch of jobs for each parameter combination
 for (pc in 1:nrow(params)){
-  
+ 
   # Define number of batches
   B <- params[param_id==pc, B]
   
@@ -48,7 +48,8 @@ for (pc in 1:nrow(params)){
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
            mem = '10G', #if running large L, may need to increase but 6G is usually sufficient
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
-           #max_run_time
+           max_run_time = "01:00:00",
+           q = "all.q",
            log=T,
            e = file.path(out_dir, paste0('logs/error_p', pc, '_b', b, '.txt')),
            o = file.path(out_dir, paste0('logs/out_p', pc, '_b', b, '.txt')),
@@ -88,7 +89,8 @@ if(num_files < num_expected){
            pass = paste0('--input_path ', input_path, ' --batch_id ', b),
            mem = '6G', #if running large L, may need to increase but 6G is usually sufficient
            fthreads = 8, #8 or 16 or 32 - fewer big jobs or more small jobs?
-           #max_run_time
+           max_run_time = "01:00:00",
+           q = "all.q",
            log=T,
            e = file.path(out_dir, paste0('logs/error_p', pc, '_b', b, '.txt')),
            o = file.path(out_dir, paste0('logs/out_p', pc, '_b', b, '.txt')),

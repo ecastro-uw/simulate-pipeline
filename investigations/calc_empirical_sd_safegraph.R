@@ -6,6 +6,7 @@ library(data.table)
 library(ggplot2)
 library(sf)
 library(RColorBrewer)
+library(patchwork)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # simulation results version
@@ -28,7 +29,8 @@ full_data <- fread(input_data_path)
 # Function: calculate empirical_sd for a single state
 # Returns a list: empirical_sd, n_counties_total, n_counties_incomplete
 # ---------------------------------------------------------------------------
-calc_empirical_sd <- function(state_location_id) {
+calc_empirical_sd <- function(state_location_id, return_type=c("list","table")) {
+  return_type <- match.arg(return_type)
 
   # Counties belonging to this state
   locs_dt <- hierarchy[parent_id == state_location_id, .(location_id, location_name)]
@@ -87,12 +89,17 @@ calc_empirical_sd <- function(state_location_id) {
   weekly_dt[, delta := y_norm - shift(y_norm, type = 'lag'), by = location_id]
   weekly_dt <- weekly_dt[!is.na(delta)]
   if (nrow(weekly_dt) == 0) return(incomplete(0))
-
+  
+  if(return_type=='table'){
+    return(weekly_dt)
+  }
+  
   list(
     empirical_sd          = sd(weekly_dt$delta),
     n_counties_total      = n_total,
     n_counties_incomplete = n_total - length(complete_locs)
   )
+
 }
 
 # ---------------------------------------------------------------------------
@@ -103,7 +110,7 @@ results <- rbindlist(lapply(seq_len(nrow(us_states)), function(i) {
   sname <- us_states$location_name[i]
   message(sprintf("[%d/%d] %s", i, nrow(us_states), sname))
   res <- tryCatch(
-    calc_empirical_sd(sid),
+    calc_empirical_sd(sid, "list"),
     error = function(e) {
       message(sprintf("  ERROR: %s", e$message))
       list(empirical_sd = NA_real_, n_counties_total = NA_integer_, n_counties_incomplete = NA_integer_)
@@ -119,13 +126,6 @@ message(sprintf("Done. Results for %d states saved to:\n  %s", nrow(results), ou
 
 
 # Translate the empirical sd and number of counties to a minimum effect size
-# e.g. Alabama has 67 counties and an SD of 0.017
-# From the sim results, an SNR of 0.12 needs 75 locs to hit 80% power. An SNR of 0.13
-# needs 40 locations. Since AL has 67 counties, the smallest SNR it can tolerate is 0.13.
-# SNR = effect size / noise
-# SNR * noise = effect size
-# 0.13 * 0.017 = 0.00221
-# The smallest detectable effect at 80% power is 0.002. The units are change in normalized logged weekly visits 
 
 
 # Make a map of the minimum effect size per state
@@ -211,4 +211,152 @@ eff_size_plot
 dev.off()
 
 
+#####
 # Make some plots to vet the assumptions involved with combining all counties in a state
+all_weekly <- rbindlist(lapply(seq_len(nrow(us_states)), function(i) {
+  sid   <- us_states$location_id[i]
+  sname <- us_states$location_name[i]
+  message(sprintf("[%d/%d] %s", i, nrow(us_states), sname))
+  res <- tryCatch(
+    calc_empirical_sd(sid, return_type = "table"),
+    error = function(e) {
+      message(sprintf("  ERROR: %s", e$message))
+      NULL
+    }
+  )
+  if (!is.data.table(res)) return(NULL)   # catches both errors and incomplete() returns
+  res[, `:=`(state_location_id = sid, state_name = sname)]
+}), fill = TRUE)
+
+
+
+# 1. visits per 10K pop vs deviation of delta y from the mean delta
+all_weekly[, mean_delta := mean(delta), by=state_location_id]
+all_weekly[, D := delta - mean_delta]
+
+pdf(paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/',version,'/visits_vs_D_all_in_one.pdf'), width=15, height=11)
+ggplot(all_weekly[y<=5000], aes(x=y, y=D)) +
+  geom_point(alpha=0.2) +
+  geom_hline(yintercept = 0, linetype='dashed') +
+  theme_classic() +
+  facet_wrap(~state_name)
+dev.off()
+
+pdf(paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/',version,'/visits_vs_D_by_state.pdf'), width=7, height=5)
+for(state in unique(all_weekly$state_name)){
+  p <- ggplot(all_weekly[state_name==state], aes(x=y, y=D)) +
+    geom_point() +
+    geom_hline(yintercept = 0, linetype='dashed') +
+    scale_x_continuous(name='Restaurant visits per 10K population') +
+    ggtitle(state) +
+    theme_classic()
+  print(p)
+}
+dev.off()
+
+# 2. county population vs deviation of delta y from the mean delta
+pop_by_county <- unique(full_data[,.(location_id, pop)])
+all_weekly <- merge(all_weekly, pop_by_county, by='location_id', all.x=T)
+
+pdf(paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/',version,'/pop_vs_D_by_state.pdf'), width=7, height=5)
+for(state in unique(all_weekly$state_name)){
+  p <- ggplot(all_weekly[state_name==state], aes(x=pop, y=D)) +
+    geom_point() +
+    geom_hline(yintercept = 0, linetype='dashed') +
+    scale_x_continuous(name='County Population') +
+    ggtitle(state) +
+    theme_classic()
+  print(p)
+}
+dev.off()
+
+
+
+
+pdf(paste0('/ihme/scratch/users/ems2285/thesis/outputs/simulations/',version,'/state_vetting_plots.pdf'), width=14, height=10)
+
+# get all state-level location ids
+state_ids <- unique(all_weekly$state_location_id)
+
+for (state_id in state_ids){
+  # Subset to counties in the state
+  counties <- hierarchy[parent_id==state_id, location_id]
+  state_dt <- all_weekly[location_id %in% counties]
+  
+  # Get state name for plot title
+  state_name <- hierarchy[location_id==state_id, location_name]
+
+  # Get population by county and identify top and bottom 5%
+  pop_by_county <- unique(full_data[location_id %in% counties,.(location_id, pop)])
+  
+
+  # Identify counties with outlier populations: log(pop) is outside the IQR
+  pop_by_county[, log_pop := log(pop)]
+  pop_by_county[, c("q1", "q3") := .(
+    quantile(log_pop, 0.25),
+    quantile(log_pop, 0.75))]
+  pop_by_county[, iqr := q3 - q1]
+  pop_by_county[, size_IQR := fcase(
+    log_pop < (q1 - 1.5 * iqr), "small",
+    log_pop > (q3 + 1.5 * iqr), "big",
+    default = "mid")]
+
+  # Clean up intermediate columns
+  pop_by_county[, c("log_pop", "q1", "q3", "iqr") := NULL]
+
+  # Merge pop classification onto SG visit data
+  state_dt <- merge(state_dt, pop_by_county, by='location_id', all.x=T)
+
+  # Calculate state means across all counties
+  state_means <- state_dt[, .(visits = mean(y),
+                                norm = mean(y/mean_jan_feb),
+                                log_norm = mean(y_norm),
+                                delta = mean(delta)), by='time_id']
+  # Define colors
+  colors <- c("#4DAF4A", "#377EB8")
+
+  # Plot
+  p1 <- ggplot() +
+    geom_line(data=state_dt, aes(x=time_id, y=y, group=as.factor(location_id)), alpha=0.3) +
+    geom_line(data=state_dt[size_IQR != 'mid'], aes(x=time_id, y=y, group=as.factor(location_id), color=size_IQR), size=1) +
+    geom_line(data=state_means, aes(x=time_id, y=visits), color='red', size=1.5) +
+    scale_x_continuous(name="Weeks til mandate", breaks=c(-3,-2,-1), labels=c(3,2,1)) +
+    scale_y_continuous(name="Visits per 10K") +
+    scale_color_manual(name='County Size', values=colors) +
+    theme_classic() 
+
+  p2 <- ggplot() +
+    geom_line(data=state_dt, aes(x=time_id, y=y/mean_jan_feb, group=as.factor(location_id)), alpha=0.3) +
+    geom_line(data=state_dt[size_IQR != 'mid'], aes(x=time_id, y=y/mean_jan_feb, group=as.factor(location_id), color=size_IQR), size=1) +
+    geom_line(data=state_means, aes(x=time_id, y=norm), color='red', size=1.5) +
+    scale_x_continuous(name="Weeks til mandate", breaks=c(-3,-2,-1), labels=c(3,2,1)) +
+    scale_y_continuous(name="Normalized visits per 10K") +
+    scale_color_manual(name='County Size', values=colors) +
+    theme_classic()  
+
+  p3 <- ggplot() +
+    geom_line(data=state_dt, aes(x=time_id, y=y_norm, group=as.factor(location_id)), alpha=0.3) +
+    geom_line(data=state_dt[size_IQR != 'mid'], aes(x=time_id, y=y_norm, group=as.factor(location_id), color=size_IQR), size=1) +
+    geom_line(data=state_means, aes(x=time_id, y=log_norm), color='red', size=1.5) +
+    scale_x_continuous(name="Weeks til mandate", breaks=c(-3,-2,-1), labels=c(3,2,1)) +
+    scale_y_continuous(name="Logged normalized visits per 10K") +
+    scale_color_manual(name='County Size', values=colors) +
+    theme_classic()  
+  
+  p4 <- ggplot() +
+    geom_line(data=state_dt, aes(x=time_id, y=delta, group=as.factor(location_id)), alpha=0.3) +
+    geom_line(data=state_dt[size_IQR != 'mid'], aes(x=time_id, y=delta, group=as.factor(location_id), color=size_IQR), size=1) +
+    geom_line(data=state_means, aes(x=time_id, y=delta), color='red', size=1.5) +
+    scale_x_continuous(name="Weeks til mandate", breaks=c(-3,-2,-1), labels=c(3,2,1)) +
+    scale_y_continuous(name="Change in logged normalized visits per 10K") +
+    scale_color_manual(name='County Size', values=colors) +
+    theme_classic()  
+  
+  # Lay out the plots into one figure
+  combined <- p1 + p2 + p3 + p4 + 
+    plot_layout(ncol = 2, guides = "collect") +
+    plot_annotation(title=state_name)
+  
+  print(combined)
+}
+dev.off()

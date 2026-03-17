@@ -32,7 +32,8 @@ make_predictions <- function(data, pipeline_inputs){
       index <- index+1
       time_steps <- unique(dt$time_id)[1:ts]
       train_dt <- dt[time_id %in% time_steps]
-      list_of_results[[index]] <- model(dataset=train_dt, w, d, sigma=fixed_sigma) #if you want to revert to old method, don't pass a sigma term
+      #list_of_results[[index]] <- model(dataset=train_dt, w, d, sigma=fixed_sigma) #if you want to revert to old method, don't pass a sigma term
+      list_of_results[[index]] <- model(dataset=train_dt, w, d)
     }
     results_one_model <- rbindlist(list_of_results)
 

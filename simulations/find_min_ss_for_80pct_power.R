@@ -11,11 +11,10 @@ library(stringr)
 library(yaml)
 
 # Which run version id do you want to examine?
-version_id <- '20260224.01'
+version_id <- '20260314.01'
 # Do you want to look at pre- or post-adjusted ensemble predictions? ('pre' or 'adj' are valid options)
 pred_type <- 'adj' 
-# What is the scaling factor between parameter SNR and empirical/realized SNR?
-scalar <- 1.32
+
 
 # Directory
 root <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id)
@@ -23,6 +22,21 @@ dir <- file.path(root,'batched_output')
 
 # Parameters
 params <- fread(file.path('/ihme/scratch/users/ems2285/thesis/outputs/simulations', version_id, 'params.csv'))
+
+# What is the scaling factor between parameter SNR and empirical/realized SNR?
+p.s <- unique(params$p.s)
+if (p.s==0){
+  scalar <- 1
+} else if (p.s==0.5){
+  scalar <- 1.32
+} else if (p.s==0.75){
+  scalar <- 1.85
+} else if (p.s==1){
+  scalar <- 2.45
+} else{
+  scalar <- NA
+}
+
 
 ### 1. Load results and calculate power by L and signal-to-noise ratio
 
@@ -46,21 +60,25 @@ load_file <- function(file){
 # Combine reps and calculate p-value/verdict for each rep
 list_of_files <- list.files(dir, pattern=paste0("pred_",pred_type), full.names = T)
 files_all <- rbindlist(lapply(list_of_files, load_file))
-files_all <- merge(files_all, params[,.(param_id, L, signal_noise_ratio)], by='param_id')
+#files_all <- merge(files_all, params[,.(param_id, L, signal_noise_ratio)], by='param_id')
+files_all <- merge(files_all, params[,.(param_id, L, theta, sigma.f)], by='param_id')
+files_all[, signal_noise_ratio := theta/sigma.f]
 files_all[, p_val := pbinom(k,L,0.05,lower.tail=F)]
 files_all[, reject_null := ifelse(p_val <= 0.05, 1, 0)]
 
 # Calculate power for each parameter configuration
 power_dt <- files_all[, list(power = (sum(reject_null)/.N)*100),
-                      by=c('param_id','L','signal_noise_ratio')]
+                      by=c('param_id','L','sigma.f','signal_noise_ratio')]
 
 ### 2. For each signal-to-noise ratio, identify the smallest L where power exceeds 80%
-setorder(power_dt, signal_noise_ratio, L)
+setorder(power_dt, sigma.f, L)
 L_star_dt <- power_dt[power>=80, .SD[1], by=signal_noise_ratio]
 setnames(L_star_dt, "L", "L_star")
+L_star_dt[, signal_noise_ratio_obs := signal_noise_ratio / scalar]
+fwrite(L_star_dt, paste0(root,'/L_star.csv'))
 
-# Note any ratios where 80% power isn't reached (100 locs not sufficient)
-setdiff(unique(power_dt$signal_noise_ratio), L_star_dt$signal_noise_ratio)
+# Note any sigmas where 80% power isn't reached (100 locs not sufficient)
+setdiff(unique(power_dt$sigma.f), L_star_dt$sigma.f)
 
 ### 3. For each signal-to-noise ratio, create a new YAML scanning L by 1s
 
@@ -73,24 +91,24 @@ if (!dir.exists(config_out_dir)) {
   dir.create(config_out_dir, recursive = TRUE)
 }
 
-# Generate a YAML file for each signal-to-noise ratio
-for (i in seq_len(nrow(L_star_dt))) {
-  snr <- L_star_dt[i, signal_noise_ratio]
-  l_star <- L_star_dt[i, L_star]
+# Generate a YAML file for each bin of locations to be searched
+list_of_bins <- unique(L_star_dt$L_star)
+for (l_max in list_of_bins){
   
   # Create L values from L*-10 to L* (by 1s)
-  l_min <- max(1, l_star - 10) #ensure L>=1
-  l_values <- seq(l_min, l_star, by = 1)
+  l_min <- max(1, l_max - 10) #ensure L>=1
+  l_values <- seq(l_min, l_max, by = 1)
+  
+  # Define sigmas
+  sigma_values <- L_star_dt[L_star==l_max, sigma.f]
   
   # Create new config
   new_config <- base_config
-  new_config$signal_noise_ratio <- snr
+  new_config$sigma.f <- as.list(sigma_values)
   new_config$L <- as.list(l_values)
   
   # Write YAML file
-  # Format SNR for filename (replace decimal point with underscore)
-  snr_str <- gsub("\\.", "_", as.character(snr))
-  yaml_filename <- file.path(config_out_dir, paste0("config_sim_snr_", snr_str, ".yaml"))
+  yaml_filename <- file.path(config_out_dir, paste0("config_sim_L_", l_min, "_to_",l_max,".yaml"))
   
   write_yaml(new_config, yaml_filename)
 }
@@ -100,7 +118,7 @@ for (i in seq_len(nrow(L_star_dt))) {
 # then proceed from line 103
 
 ### 4. For each signal-to-noise ratio, identify the smallest L where power exceeds 80%
-version_list <- c(paste0('20260224.0', 2:4), paste0('20260225.0', 1:3))
+version_list <- c('20260314.02', paste0('20260315.0', 1:5))
 
 final_dt <- data.table()
 for (v in version_list){
@@ -115,7 +133,8 @@ for (v in version_list){
   files_all <- rbindlist(lapply(list_of_files, load_file))
   
   # add parameter info
-  files_all <- merge(files_all, params[,.(param_id, L, signal_noise_ratio)], by='param_id')
+  files_all <- merge(files_all, params[,.(param_id, L, theta, sigma.f)], by='param_id')
+  files_all[, signal_noise_ratio := theta/sigma.f]
   
   # calc p-value by rep
   files_all[, p_val := pbinom(k,L,0.05,lower.tail=F)]
@@ -137,18 +156,19 @@ for (v in version_list){
 
 ### 5. Translate SNR to reflect the realized sd of the simulations
 final_dt[, SNR_new := signal_noise_ratio / scalar]
+fwrite(final_dt, paste0(root,'/snr_vs_L.csv'))
 
 ### 6. Make the results plot
 pdf(paste0(root,'/snr_vs_L.pdf'), width=6, height=4)
-ggplot(final_dt, aes(x = SNR_new, y = L)) +
+ggplot(final_dt, aes(y=L, x = SNR_new)) +
   geom_smooth(se=FALSE) +
   geom_point() +
-  scale_x_continuous(name='Signal-to-noise ratio', limits=c(0.11,0.3)) +
-  scale_y_continuous(name='Number of Locations', limits=c(0,80), n.breaks=10) +
+  scale_x_continuous(name='Signal-to-Noise Ratio') + 
+  scale_y_continuous(name='Number of Locations', limits=c(0,85), n.breaks=5) +
   theme_bw() +
   ggtitle('Sample Size Required to Achieve 80% Power \nat Varying Signal-to-Noise Ratios') +
-  theme(axis.text = element_text(size=12), axis.title=element_text(size=12),
-        plot.title = element_text(size=11, hjust = 0.5)) 
+  theme(axis.text = element_text(size=12), axis.title=element_text(size=12), 
+        plot.title = element_text(size=11, hjust = 0.5))
 dev.off()
 
 

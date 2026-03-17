@@ -55,6 +55,11 @@ prep_configs <- function(config_dir, out_dir){
     params[, sigma.s := theta / signal_noise_ratio]
   }
   
+  # TEMP
+  if(config_sim$use_ratio==F){
+    params[, sigma.s := sigma.f]
+  }
+  
   fwrite(params, file.path(out_dir, 'params.csv'))
   
   return(params)
