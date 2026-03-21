@@ -4,6 +4,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   code_dir <- pipeline_inputs$code_dir
   configs <- pipeline_inputs$configs
+  real_data <- ifelse('group_id' %in% names(pipeline_inputs)==T, T, F)
   
   source(file.path(code_dir,'simulations/1_simulate_data.R'))
   source(file.path(code_dir,'pipeline/1_prep_data.R'))
@@ -13,14 +14,14 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   ## PIPELINE 
   # (1) Simulate or prep data
-  sim_start <- Sys.time()
-  if (data=='simulated'){
+  data_start <- Sys.time()
+  if (real_data){
+    data <- prep_data(pipeline_inputs)
+  } else {
     data <- simulate_data(param_set, pipeline_inputs)
-  } else if (data=='real'){
-    data <- prep_data()
   }
-  sim_end <- Sys.time()
-  sim_time <- sim_end - sim_start
+  data_end <- Sys.time()
+  data_time <- data_end - data_start
   
   # (2) Make predictions
   pred_start <- Sys.time()
@@ -39,7 +40,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   # (4) Adjust the UI
   adjust_start <- Sys.time()
-  adjusted_results <- adjust_UI(data, unadj_results, pipeline_inputs$problem_log, configs)
+  adjusted_results <- adjust_UI(data, unadj_results, configs)
   final_results <- adjusted_results$final_results
   adjust_end <- Sys.time()
   adjust_time <- adjust_end - adjust_start
@@ -146,7 +147,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   # sigmas_dt
   
   # (10) Time stamps
-  time_stamps <- c(sim_time = sim_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
+  time_stamps <- c(data_time = data_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
   return(list(obs_dt = data,
               candidate_mod_output = candidate_mod_output,

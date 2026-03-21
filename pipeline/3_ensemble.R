@@ -41,7 +41,7 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
     }
     
     # Take a weighted average of model preds to get the ensemble preds.
-    weights_dt <- data.table(model = list_of_models, weight = weights)   #globally fit p_s
+    weights_dt <- data.table(model = list_of_models, weight = weights)
     preds_dt <- merge(preds_dt, weights_dt, by='model')
     
     # Calculate weighted average of each draw by location and time
@@ -53,8 +53,6 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
     # use results from the only candidate model
     result <- preds_dt[, model := 'ensemble']
   }
-  
-  #TODO calculate p-value
 
   return(list(unadj_results = result, weights = weights_dt))
 }

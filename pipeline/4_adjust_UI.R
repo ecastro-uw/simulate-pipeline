@@ -1,17 +1,10 @@
 # Adjust the UI
-adjust_UI <- function(data, results_draws, problem_log, configs){
+adjust_UI <- function(data, results_draws, configs){
   
   # define some parameters
   w <- configs$w #forecast length
   n_draws <- configs$d #number of draws
   fit_model <- ifelse(length(configs$models)>1, 'ensemble',configs$models)
-  
-  # generate a list of locations
-  loc_list <- unique(results_draws$location_id)
-  
-  # remove any locations that didnt pass qc
-  problem_log$location_id <- as.character(problem_log$location_id)
-  loc_list <- setdiff(loc_list, problem_log$location_id)
   
   # Step 1: summarize draws from the pre-event period (mean, LL, UL, observed values)
   

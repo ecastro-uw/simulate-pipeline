@@ -66,7 +66,7 @@ calc_empirical_sd <- function(state_location_id, return_type=c("list","table")) 
   baseline_weekly <- baseline_weekly[, .(mean_jan_feb = mean(y)), by = location_id]
 
   # --- Pre-mandate window: 4 weeks (28 days) before each county's mandate ---
-  mobility_dt <- merge(mobility_dt, events_dt[, .(location_id, onset = date)])
+  mobility_dt <- merge(mobility_dt, events_dt[, .(location_id, onset = date)], by='location_id')
   mobility_dt <- mobility_dt[date >= (onset - 28) & date < onset]
 
   # Keep only counties with complete pre-mandate window AND complete baseline

@@ -1,1 +1,142 @@
 # 1_prep_data
+# return a data.table with columns: location_id, time_id, y, cov1, cov2, etc.
+# if the file already exists, load it in. otherwise, create it.
+
+prep_data <- function(pipeline_inputs){
+  
+  input_dir <- pipeline_inputs$input_dir
+  configs <- pipeline_inputs$configs
+  
+  # which country?
+  country <- configs$country
+  
+  # what is the geographic unit of analysis?
+  loc_type <- configs$location_type
+  
+  # which locations?
+  location_list <- configs$location_list
+  
+  # which mandate?
+  mandate <- configs$mandates
+  
+  # which imposition?
+  imposition <- configs$imposition
+  
+  # which mobility data?
+  data_source <- configs$data_source
+  
+  # which covariates?
+  #covariate_list <- configs$covariates
+  
+  print(paste(country, loc_type, '-', imposition, mandate, 'mandate -', data_source))
+  input_subdir <- paste0(input_dir,country,'_', loc_type, '/')
+  
+  # Ready to assemble the data set
+  
+  ### (1) First, pull in timing data for event of interest
+  event_dt <- fread(paste0(input_subdir, imposition,'_',mandate,'_close.csv'))[location_id %in% location_list]
+  
+  ### (2) Next load and process the outcome variable data
+  if (data_source=='safegraph'){
+    
+    # Which data to grab?
+    cat_name <- ifelse(mandate=='restaurant', 'Restaurants', 'Drinking')
+    var_name <- ifelse(configs$dep_var=='count', 'visit_count', 'visits_per_10k')
+    
+    # Load the data
+    outcome_dt <- fread(paste0(input_subdir,'/processed_safegraph_data.csv'))[location_id %in%
+                   location_list & top_category %like% cat_name, .(location_id, date, v = get(var_name))]
+    setorder(outcome_dt, location_id, date)
+    
+    # Get baseline data for normalization (first 8 weeks of 2020)
+    baseline_dt <- outcome_dt[date >= '2020-01-01' & date < '2020-02-26']
+    # subset to locations with no missing data during the 56-day baseline period
+    complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 56, location_id]
+    baseline_dt <- baseline_dt[location_id %in% complete_baseline]
+    # aggregate to the week level
+    baseline_dt[, week_id := rep(1:8, each = 7), by = location_id]
+    baseline_weekly <- baseline_dt[, .(v = sum(v)), by = c('location_id', 'week_id')]
+    # calculate the mean value over the baseline period for each location
+    baseline <- baseline_weekly[, .(mean_jan_feb = mean(v)), by = location_id]
+    
+    # Get data for the desired study window
+    # If first mandate, 8 weeks prior (default train weeks) and 1 week post (w)
+    # If second mandate, all but 2 (padding) weeks between the mandates and 1 week post (w)
+    if (imposition=='first'){
+      # Subset to appropriate window
+      outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
+      outcome_dt <- outcome_dt[date >= (onset_date - (configs$default_train_wks*7)) &
+                                date < (onset_date + (configs$w*7))]
+      
+      # Summarize to weekly level
+      outcome_dt[, time_id := rep(-(configs$default_train_wks):0, each = 7), by = location_id]
+      weekly_dt <- outcome_dt[, .(v = sum(v)), by = c('location_id', 'time_id')]
+      
+    } else{
+      # Determine start of study window (at least 2 weeks after previous lift and on the same
+      # day-of-week as the onset date)
+      event_dt[, min_start_date := prev_lift + configs$padding*7]
+      event_dt[, onset_dow     := wday(onset_date, week_start = 1)]
+      event_dt[, min_start_dow := wday(min_start_date, week_start = 1)]
+      event_dt[, days_to_add   := (onset_dow - min_start_dow) %% 7]
+      event_dt[, window_start   := min_start_date + days_to_add]
+      event_dt[, c("min_start_date", "onset_dow", "min_start_dow", "days_to_add") := NULL]
+      
+      # Subset to appropriate window
+      outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
+      outcome_dt <- outcome_dt[date >= window_start &
+                               date < (onset_date + (configs$w*7))]
+      
+      # Summarize to weekly level
+      outcome_dt[, time_id := {
+        days_in_location = .N
+        n_weeks = days_in_location / 7
+        week_seq = seq(from = -(n_weeks - 1), to = 0, by = 1)
+        rep(week_seq, each = 7)
+      }, by = location_id]
+      
+      weekly_dt <- outcome_dt[, .(v = sum(v)), by = c('location_id', 'time_id')]
+    }
+    
+    # Normalize by Jan-Feb baseline then convert to log space
+    weekly_dt <- merge(weekly_dt, baseline, by = 'location_id')
+    dt <- weekly_dt[, y := log(v / mean_jan_feb)][, .(location_id, time_id, y)]
+    
+  } else{
+    # Google
+    #TODO
+  }
+  
+  ### (3) Add time invariant covariates (population, 2020 votership)
+  #TODO - update where pop is sourced from
+  ## 3(a) Population
+  pop_dt <- fread(paste0(input_subdir,'/processed_safegraph_data.csv'))[location_id %in%
+              location_list & top_category %like% cat_name]
+  pop_dt <- unique(pop_dt[, .(location_id, population = pop)])
+  dt <- merge(dt, pop_dt, by='location_id', all.x=T)
+  
+  ## 3(b) 2020 Election Verdict
+  
+  ### (4) Add time varying covariates 
+  ## 4(a) Other mandates
+  
+  ## 4(b) Covid cases and deaths (per 10K pop)
+  
+  # Load data
+  covid_dt <- fread(paste0(input_subdir,'covid_cases_deaths.csv'))[location_id %in% location_list]
+  # Subset to appropriate window
+  covid_dt <- merge(covid_dt, event_dt, by='location_id')
+  covid_dt <- covid_dt[date >= (onset_date - (configs$default_train_wks*7)) &
+                        date < (onset_date + (configs$w*7))]
+  # Summarize by week
+  covid_dt[, time_id := rep(-(configs$default_train_wks):0, each = 7), by = location_id]
+  covid_weekly_dt <- covid_dt[, .(cases = sum(daily_cases),
+                                  deaths = sum(daily_deaths)), by = c('location_id', 'time_id')]
+  # Add to the dataset
+  dt <- merge(dt, covid_weekly_dt, by=c('location_id', 'time_id'))
+  # Express in per capita space
+  dt[, c('cases_pc', 'deaths_pc') := list((cases/population)*10000, (deaths/population)*10000)]
+  
+  # Return the dataset
+  return(dt)
+}

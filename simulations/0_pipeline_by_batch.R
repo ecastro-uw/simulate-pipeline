@@ -58,11 +58,8 @@ models <- configs$models
 min_train_t <- max(data_req_dt[weeks_ahead==configs$w, ..models])
 max_train_t <- param_set$t
   
-# C. Problem log
-problem_log <- data.table('location_id'=numeric(), 'instance'=numeric())
-  
 pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_t = max_train_t,
-                        problem_log = problem_log, code_dir = code_dir)
+                        code_dir = code_dir)
   
   
 # Run the pipeline for each rep in the batch and combine results
@@ -135,7 +132,7 @@ results <- foreach(
   # (10) Time stamps
   time_stamps <- data.table(
     rep_id = r,
-    sim_time = one_rep$time_stamps['sim_time'],
+    data_time = one_rep$time_stamps['data_time'],
     pred_time = one_rep$time_stamps['pred_time'],
     ensemble_time = one_rep$time_stamps['ensemble_time'],
     adjust_time = one_rep$time_stamps['adjust_time']
@@ -182,10 +179,10 @@ end_time <- Sys.time()
 batch_run_time <- end_time - start_time
 # output all time stamps
 batch_run_times <- results$batch_run_times
-avg <- batch_run_times[, lapply(.SD, mean), .SDcols = c('sim_time', 'pred_time', 'ensemble_time', 'adjust_time')]
-totals <- batch_run_times[, lapply(.SD, sum), .SDcols = c('sim_time', 'pred_time', 'ensemble_time', 'adjust_time')]
+avg <- batch_run_times[, lapply(.SD, mean), .SDcols = c('data_time', 'pred_time', 'ensemble_time', 'adjust_time')]
+totals <- batch_run_times[, lapply(.SD, sum), .SDcols = c('data_time', 'pred_time', 'ensemble_time', 'adjust_time')]
 run_time_out <- data.table(measure = c('avg', 'total'),
-           sim_time = c(avg$sim_time,totals$sim_time),
+           data_time = c(avg$data_time,totals$data_time),
            pred_time = c(avg$pred_time,totals$pred_time),
            ensemble_time = c(avg$ensemble_time,totals$ensemble_time),
            adj_time = c(avg$adjust_time,totals$adjust_time),
