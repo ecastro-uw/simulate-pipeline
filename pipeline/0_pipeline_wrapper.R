@@ -45,9 +45,8 @@ w <- configs$w
 data_req_dt <- fread(data_req_path)
 models <- configs$models
 min_train_t <- max(data_req_dt[weeks_ahead==configs$w, ..models])
-max_train_t <- configs$default_train_wks
 
-pipeline_inputs <- list(configs = configs, min_train_t = min_train_t, max_train_t = max_train_t,
+pipeline_inputs <- list(configs = configs, min_train_t = min_train_t,
                         code_dir = code_dir, input_dir = input_dir, group_id = group)
 
 # RUN THE PIPELINE
