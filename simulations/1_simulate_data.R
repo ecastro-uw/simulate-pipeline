@@ -19,6 +19,7 @@ simulate_data <- function(param_set, pipeline_inputs){
   # Simple linear model: y_{t+1} = beta1 * x_t + epsilon
   if(data_model == 'simple_lm'){
     beta1 <- param_set$beta1
+    linear_mod_sigma <- param_set$linear_mod_sigma
 
     # Simulate x for L locations over t+1 time steps (iid standard normal)
     sim_x <- matrix(rnorm(L * (t + 1), mean = 0, sd = 1), nrow = L, ncol = t + 1)
@@ -26,7 +27,7 @@ simulate_data <- function(param_set, pipeline_inputs){
     # Simulate y: y[,1] = y0; y[,j] = beta1 * x[,j-1] + epsilon for j = 2,...,t+1
     sim_y <- matrix(NA_real_, nrow = L, ncol = t + 1)
     sim_y[, 1] <- y0
-    eps <- matrix(rnorm(L * t, mean = 0, sd = sigma.f), nrow = L, ncol = t)
+    eps <- matrix(rnorm(L * t, mean = 0, sd = linear_mod_sigma), nrow = L, ncol = t)
     for (j in 2:(t + 1)) {
       sim_y[, j] <- beta1 * sim_x[, j - 1] + eps[, j - 1]
     }

@@ -9,11 +9,12 @@ sigma.f: 1
 sigma.s: 0
 linear_mod:
   beta1:
-    - -1 
+    - -1
     - 0.5
     - 1
     - 1.5
     - 2
+  sigma: 1
 ar_linear_mod:
   beta1: 1
   beta2: 1

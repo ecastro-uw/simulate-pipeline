@@ -7,6 +7,7 @@ prep_configs <- function(config_dir, out_dir){
   
   # Enumerate parameter combinations and save table to disk
   beta1_vals <- if(!is.null(config_sim$linear_mod$beta1)) config_sim$linear_mod$beta1 else NA
+  linear_mod_sigma_vals <- if(!is.null(config_sim$linear_mod$sigma)) config_sim$linear_mod$sigma else NA
 
   if(config_sim$use_ratio==F){
   params <- as.data.table(
@@ -19,6 +20,7 @@ prep_configs <- function(config_dir, out_dir){
                 p.s = config_sim$p.s,
                 y0 = config_sim$y0,
                 beta1 = beta1_vals,
+                linear_mod_sigma = linear_mod_sigma_vals,
                 B = config_sim$B,
                 R = config_sim$R,
                 d = config_sim$d,
@@ -40,6 +42,7 @@ prep_configs <- function(config_dir, out_dir){
                   p.s = config_sim$p.s,
                   y0 = config_sim$y0,
                   beta1 = beta1_vals,
+                  linear_mod_sigma = linear_mod_sigma_vals,
                   B = config_sim$B,
                   R = config_sim$R,
                   d = config_sim$d,
