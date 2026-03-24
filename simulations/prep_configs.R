@@ -6,6 +6,8 @@ prep_configs <- function(config_dir, out_dir){
   write_yaml(config_sim, file.path(out_dir, 'config_sim.yaml'))
   
   # Enumerate parameter combinations and save table to disk
+  beta1_vals <- if(!is.null(config_sim$linear_mod$beta1)) config_sim$linear_mod$beta1 else NA
+
   if(config_sim$use_ratio==F){
   params <- as.data.table(
     expand.grid(data_model = as.character(config_sim$data_model),
@@ -16,9 +18,10 @@ prep_configs <- function(config_dir, out_dir){
                 sigma.s = config_sim$sigma.s,
                 p.s = config_sim$p.s,
                 y0 = config_sim$y0,
+                beta1 = beta1_vals,
                 B = config_sim$B,
                 R = config_sim$R,
-                d = config_sim$d, 
+                d = config_sim$d,
                 L = config_sim$L,
                 save_draws = config_sim$`save_draws?`,
                 save_all_time_steps = config_sim$`save_all_time_steps?`,
@@ -36,9 +39,10 @@ prep_configs <- function(config_dir, out_dir){
                   signal_noise_ratio = as.numeric(config_sim$signal_noise_ratio),
                   p.s = config_sim$p.s,
                   y0 = config_sim$y0,
+                  beta1 = beta1_vals,
                   B = config_sim$B,
                   R = config_sim$R,
-                  d = config_sim$d, 
+                  d = config_sim$d,
                   L = config_sim$L,
                   save_draws = config_sim$`save_draws?`,
                   save_all_time_steps = config_sim$`save_all_time_steps?`,
