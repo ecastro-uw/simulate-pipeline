@@ -36,7 +36,7 @@ loc_list <- unlist(strsplit(fread(paste0(out_dir,'/inputs/location_groups.csv'))
 # Prep input files
 # A. Config file
 configs <- read_yaml(config_path)
-write_yaml(configs, paste0(out_dir,'/inputs/configs.yaml'))
+write_yaml(configs, paste0(out_dir,'/inputs/config.yaml'))
 configs$location_list <- loc_list
 
 

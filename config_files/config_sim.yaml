@@ -1,47 +1,26 @@
 ---
-data_model: ensemble
-fit_model: ensemble
-t: 8
+data_model: simple_lm
+fit_model: simple_lm
+t: 14
 theta: 1
 use_ratio: no
 signal_noise_ratio: 0.25
-sigma.f: 
-  - 0.8
-  - 0.9
-  - 1.0
-  - 1.1
-  - 1.2
-  - 1.3
-  - 1.4
-  - 1.5
-  - 1.6
-  - 1.7
-  - 1.8
-  - 1.9
-  - 2.0
-  - 2.1
-  - 2.2
-  - 2.3
-  - 2.4
-  - 2.5
-  - 2.6
-  - 2.7
-  - 2.8
+sigma.f: 1
 sigma.s: 0
+linear_mod:
+  beta1:
+    - -1 
+    - 0.5
+    - 1
+    - 1.5
+    - 2
+ar_linear_mod:
+  beta1: 1
+  beta2: 1
 p.s: 0
 y0: 0
 B: 20
 R: 250
 d: 1000
-L:
-  - 10
-  - 20
-  - 30
-  - 40
-  - 50
-  - 60
-  - 70
-  - 80
-  - 90
-  - 100
+L: 40
 ...
