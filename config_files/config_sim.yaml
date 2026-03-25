@@ -1,26 +1,30 @@
 ---
-data_model: simple_lm
-fit_model: simple_lm
-t: 14
+data_model: ar_simple_lm
+fit_model: ar_simple_lm
+t: 8
 theta: 1
-use_ratio: no
-signal_noise_ratio: 0.25
-sigma.f: 1
-sigma.s: 0
-linear_mod:
-  beta1:
-    - -1
-    - 0.5
-    - 1
-    - 1.5
+naive_mods:
+  use_ratio: no
+  signal_noise_ratio: 0.25
+  sigma.f: 1
+  sigma.s: 0
+simple_lm:
+  beta0: 
+    - 0
     - 2
-  sigma: 1
-ar_linear_mod:
-  beta1: 1
+  beta1:
+    - 2
+  sigma: 
+    - 0
+    - 1
+ar_simple_lm:
+  beta0: 0
+  beta1: 2
   beta2: 1
+  sigma: 0
 p.s: 0
 y0: 0
-B: 20
+B: 1
 R: 250
 d: 1000
 L: 40

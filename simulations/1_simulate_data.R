@@ -9,27 +9,30 @@ simulate_data <- function(param_set, pipeline_inputs){
   data_model = as.character(param_set$data_model)
   t = param_set$t
   theta = param_set$theta
-  sigma.f = param_set$sigma.f
-  sigma.s = param_set$sigma.s
-  p.s = param_set$p.s
   y0 = param_set$y0
   L = param_set$L
   w <- pipeline_inputs$configs$w
+  # Model specific parameters may not always be present in the param file
+  p.s <- if(!is.null(param_set$p.s)) param_set$p.s else NA
+  sigma.f <- if(!is.null(param_set$sigma.f)) param_set$sigma.f else NA
+  sigma.s <- if(!is.null(param_set$sigma.s)) param_set$sigma.s else NA
+  beta0 <- if(!is.null(param_set$beta0)) param_set$beta0 else NA
+  beta1 <- if(!is.null(param_set$beta1)) param_set$beta1 else NA
+  beta2 <- if(!is.null(param_set$beta2)) param_set$beta2 else NA
+  sigma <- if(!is.null(param_set$sigma)) param_set$sigma else NA
 
-  # Simple linear model: y_{t+1} = beta1 * x_t + epsilon
+  # Simple linear model: y_{t+1} = beta0 + beta1 * x_t + epsilon
   if(data_model == 'simple_lm'){
-    beta1 <- param_set$beta1
-    linear_mod_sigma <- param_set$linear_mod_sigma
 
     # Simulate x for L locations over t+1 time steps (iid standard normal)
     sim_x <- matrix(rnorm(L * (t + 1), mean = 0, sd = 1), nrow = L, ncol = t + 1)
 
-    # Simulate y: y[,1] = y0; y[,j] = beta1 * x[,j-1] + epsilon for j = 2,...,t+1
+    # Simulate y: y[,1] = y0; y[,j] = beta0 + beta1 * x[,j-1] + epsilon for j = 2,...,t+1
     sim_y <- matrix(NA_real_, nrow = L, ncol = t + 1)
     sim_y[, 1] <- y0
-    eps <- matrix(rnorm(L * t, mean = 0, sd = linear_mod_sigma), nrow = L, ncol = t)
+    eps <- matrix(rnorm(L * t, mean = 0, sd = sigma), nrow = L, ncol = t)
     for (j in 2:(t + 1)) {
-      sim_y[, j] <- beta1 * sim_x[, j - 1] + eps[, j - 1]
+      sim_y[, j] <- beta0 + beta1 * sim_x[, j - 1] + eps[, j - 1]
     }
 
     # Apply treatment effect at the final time step

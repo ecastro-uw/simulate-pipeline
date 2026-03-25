@@ -6,8 +6,6 @@ mandates: restaurant     # restaurant or bar
 imposition: second        # first or second
 data_source: safegraph   # safegraph or google
 models: #candidate models to be included in the ensemble
-  - naive_flat_1
-  - naive_slope_2
   - lm_cases
 perform_meas: MSE
 w: 1  #number of weeks ahead to forecast
@@ -17,7 +15,7 @@ default_train_wks: 8
 seed: 1030
 dep_var: per capita #count or per capita
 save_draws?: no
-save_all_time_steps?: no
+save_all_time_steps?: yes
 save_pre_adj_draws?: no
 save_all_pre_adj_time_steps?: no
 save_candidate_draws?: no

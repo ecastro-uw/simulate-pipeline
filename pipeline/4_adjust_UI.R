@@ -2,9 +2,7 @@
 adjust_UI <- function(data, results_draws, configs){
   
   # define some parameters
-  w <- configs$w #forecast length
   n_draws <- configs$d #number of draws
-  fit_model <- ifelse(length(configs$models)>1, 'ensemble',configs$models)
   
   # Step 1: summarize draws from the pre-event period (mean, LL, UL, observed values)
   

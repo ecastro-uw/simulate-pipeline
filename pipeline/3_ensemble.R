@@ -52,6 +52,7 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
   } else {
     # use results from the only candidate model
     result <- preds_dt[, model := 'ensemble']
+    weights_dt <- data.table(model = list_of_models, weight = 1)
   }
 
   return(list(unadj_results = result, weights = weights_dt))
