@@ -55,8 +55,43 @@ simulate_data <- function(param_set, pipeline_inputs){
     dt <- dt[order(location_id, time_id)]
     return(dt)
   }
-  
-  # Simulate data - L x (t+1) matrix 
+
+  # AR simple linear model: y_{t+1} = beta0 + beta1*y_t + beta2*x_t + epsilon
+  if(data_model == 'ar_simple_lm'){
+
+    # Simulate x for L locations over t+1 time steps (iid standard normal)
+    sim_x <- matrix(rnorm(L * (t + 1), mean = 0, sd = 1), nrow = L, ncol = t + 1)
+
+    # Simulate y: y[,1] = y0; y[,j] = beta0 + beta1*y[,j-1] + beta2*x[,j-1] + epsilon
+    sim_y <- matrix(NA_real_, nrow = L, ncol = t + 1)
+    sim_y[, 1] <- y0
+    eps <- matrix(rnorm(L * t, mean = 0, sd = sigma), nrow = L, ncol = t)
+    for (j in 2:(t + 1)) {
+      sim_y[, j] <- beta0 + beta1 * sim_y[, j - 1] + beta2 * sim_x[, j - 1] + eps[, j - 1]
+    }
+
+    # Apply treatment effect at the final time step
+    sim_y[, t + 1] <- sim_y[, t + 1] - theta
+
+    # Reshape y to long format
+    dt_y <- as.data.table(sim_y)
+    dt_y[, location_id := .I]
+    dt_y <- melt(dt_y, id.vars = 'location_id', variable.name = 'time_id', value.name = 'y')
+    dt_y[, time_id := as.numeric(sub('V', '', time_id)) - (t + 1)]
+
+    # Reshape x to long format
+    dt_x <- as.data.table(sim_x)
+    dt_x[, location_id := .I]
+    dt_x <- melt(dt_x, id.vars = 'location_id', variable.name = 'time_id', value.name = 'x')
+    dt_x[, time_id := as.numeric(sub('V', '', time_id)) - (t + 1)]
+
+    # Merge and return
+    dt <- merge(dt_y, dt_x, by = c('location_id', 'time_id'))
+    dt <- dt[order(location_id, time_id)]
+    return(dt)
+  }
+
+  # Simulate data - L x (t+1) matrix
   if(data_model %in% c("naive_flat_1", "ensemble")){
     changes <- matrix(rnorm(L*t, mean=0, sd=sigma.f), ncol=t)
     tf <- t(apply(changes, 1, cumsum))
