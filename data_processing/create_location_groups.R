@@ -24,12 +24,17 @@ rural_wa_counties <- wa_counties[location_name %in%
 
 # Group 3: all WA counties
 
+# Group 4: all GA counties
+ga_counties <- hierarchy[parent_id==hierarchy[location_name=='Georgia', location_id], .(location_id, location_name)]
+
+
 # Compile the dataset
-groups <- data.table(group_id = 1:3,
-                     description = c('Urban WA counties', 'Rural WA counties', 'WA counties'),
+groups <- data.table(group_id = 1:4,
+                     description = c('Urban WA counties', 'Rural WA counties', 'WA counties', 'GA counties'),
                      locations = c(paste(urban_wa_counties$location_id, collapse=','),
                                    paste(rural_wa_counties$location_id, collapse=','),
-                                   paste(wa_counties$location_id, collapse=',')))
+                                   paste(wa_counties$location_id, collapse=','),
+                                   paste(ga_counties$location_id, collapse=',')))
 
 fwrite(groups, paste0(out_dir,'location_groups.csv'))
 

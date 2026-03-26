@@ -1,7 +1,9 @@
 ---
-data_model: ar_simple_lm
-fit_model: ar_simple_lm
-t: 8
+data_model: simple_lm
+fit_model: ensemble
+t: 
+  - 8
+  - 15
 theta: 1
 naive_mods:
   use_ratio: no
@@ -11,17 +13,16 @@ naive_mods:
 simple_lm:
   beta0: 
     - 0
-    - 2
   beta1:
     - 2
   sigma: 
-    - 0
     - 1
+    - 2
 ar_simple_lm:
   beta0: 0
   beta1: 2
   beta2: 1
-  sigma: 0
+  sigma: 0.5
 p.s: 0
 y0: 0
 B: 1

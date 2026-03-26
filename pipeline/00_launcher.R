@@ -11,7 +11,7 @@ source(file.path(code_dir, 'helper_functions/submit_jobs.R'))
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260321.02')
+#out_dir <- file.path(out_root,'20260325.01')
 
 ## 2. LOAD LOCATION GROUPS ##
 loc_groups <- fread('/ihme/scratch/users/ems2285/thesis/aim_3/location_groups.csv')

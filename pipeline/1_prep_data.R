@@ -68,12 +68,9 @@ prep_data <- function(pipeline_inputs){
       outcome_dt <- outcome_dt[date >= (onset_date - (configs$default_train_wks*7)) &
                                 date < (onset_date + (configs$w*7))]
       
-      # Add week id
-      outcome_dt[, time_id := rep(-(configs$default_train_wks):0, each = 7), by = location_id]
-      
     } else{
-      
       # Calculate length of the shortest window/interval
+      # All locations set to shortest window for second mandates
       min_window <- min(event_dt[, floor((onset_date - prev_lift - (configs$padding*7))/7)])
       
       # Subset to appropriate window
@@ -81,14 +78,29 @@ prep_data <- function(pipeline_inputs){
       outcome_dt <- outcome_dt[date >= (onset_date - min_window*7) &
                                date < (onset_date + (configs$w*7))]
       
-      # Add week id
-      outcome_dt[, time_id := rep(-(min_window):0, each = 7), by = location_id]
     }
+    
+    # Add week id
+    outcome_dt[, time_id := floor((date - onset_date) / 7), by = location_id]
+    
+    # Check if any locations having missing weeks
+    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
+    
+    # Check if any locations have missing days
+    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N<7]
+    
+    # Drop any locations with missing data during the study period
+    locs_to_drop <- unique(c(missing_weeks$location_id, missing_days$location_id))
+    outcome_dt <- outcome_dt[! location_id %in% locs_to_drop]
     
   } else{
     # Google
     #TODO
   }
+  
+  #TODO output a log of missing locs with reasons for missingness (incomplete baseline, no event data, 
+  # for first imposition, are there 8 weeks of data available before the baseline period? etc.)
+  missing_locs <- setdiff(location_list, unique(outcome_dt$location_id)) 
   
   ### (3) Add time invariant covariates (population, 2020 votership)
   #TODO - update where pop is sourced from
@@ -99,9 +111,14 @@ prep_data <- function(pipeline_inputs){
   outcome_dt <- merge(outcome_dt, pop_dt, by='location_id', all.x=T)
   
   ## 3(b) 2020 Election Verdict
+  if(country=='USA'){
+    
+  }
   
   ### (4) Add time varying covariates
   ## 4(a) Other mandates
+  mandate_dt <- fread(paste0(input_subdir,'other_mandate_time_series.csv'))[location_id %in% location_list]
+  outcome_dt <- merge(outcome_dt, mandate_dt, by=c('location_id','date'), all.x=T)
   
   ## 4(b) Covid cases and deaths (per 10K pop)
   covid_dt <- fread(paste0(input_subdir,'covid_cases_deaths.csv'))[location_id %in% location_list]
@@ -114,6 +131,10 @@ prep_data <- function(pipeline_inputs){
   ### Summarize to weekly level
   weekly_dt <- outcome_dt[, .(v = sum(v),
                               population = unique(population),
+                              pct_edu = sum(primary_edu)/7,
+                              pct_retail = sum(non_essential_retail_close)/7,
+                              pct_gathering = sum(gatherings50i100o)/7,
+                              pct_gym = sum(gym_pool_leisure_close)/7,
                               cases_pc = sum(daily_cases)/unique(population)*10000,
                               deaths_pc = sum(daily_deaths)/unique(population)*10000),
                           by = c('location_id', 'time_id')]
@@ -122,8 +143,10 @@ prep_data <- function(pipeline_inputs){
   if(data_source=='safegraph'){
     # Normalize by Jan-Feb baseline then convert to log space
     weekly_dt <- merge(weekly_dt, baseline, by = 'location_id')
-    dt <- weekly_dt[, y := log(v / mean_jan_feb)]
-    dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc, population)]
+    dt <- weekly_dt[, y := log(v / mean_jan_feb)] #TODO - how to handle instances when v=0? results in y=-Inf
+    dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
+                 pct_edu, pct_retail, pct_gathering, pct_gym, 
+                 population)]
   }
   
   # Return the dataset

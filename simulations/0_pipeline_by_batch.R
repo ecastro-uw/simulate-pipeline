@@ -46,7 +46,7 @@ param_set <- fread(param_path)[param_id == inputs$param_id]
 configs <- read_yaml(config_path)
 configs$d <- param_set$d
 if(param_set$fit_model=='ensemble'){
-  configs$models <- c('naive_flat_1', 'naive_slope_2')
+  configs$models <- c('naive_flat_1', 'naive_slope_2', 'ar_simple_lm')
 } else {
   configs$models <- param_set$fit_model
 }
@@ -88,7 +88,7 @@ results <- foreach(
       batch_run_times = rbind(x$batch_run_times, y$batch_run_times)
     )
   },
-  .packages = c("data.table", "boot", "MASS")
+  .packages = c("data.table", "boot", "MASS", "forecast")
   #.export = gsub(".R","", gsub(".*/models/", "", list_of_files))
 ) %dorng% {
   

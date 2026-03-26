@@ -6,6 +6,7 @@ library(data.table)
 library(yaml)
 library(boot)
 library(MASS)
+library(forecast)
 
 # Get arguments from parser
 parser <- ArgumentParser()
