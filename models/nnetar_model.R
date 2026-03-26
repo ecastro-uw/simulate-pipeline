@@ -1,24 +1,55 @@
 nnetar_model <- function(dataset, w, d){
-  
+
   # Description of function:
-  # neural net model
-  
-  # Forecast (point estimate) w-week(s) ahead 
-  data_ts <- ts(dataset$y)
-  tmp_model <- nnetar(data_ts, P=1, p=2, size=10, repeats = 50, lambda = 0) 
-  
-  # Generate draws for the w-week-ahead forecast, assuming a normal distribution
-  draws <- sapply(1:d,function(x)as.numeric(simulate(tmp_model, 
-                                                     future = TRUE, nsim = w)))
-  
-  # Name the draws
-  draws_dt <- as.data.table(draws)
-  setnames(draws_dt, paste0("draw_", 1:d))
-  
-  # Organize the results
-  ids <- data.table(model="nnetar_model", location_id = unique(dataset$location_id),
-                    time_id = max(dataset$time_id)+w)
-  draws_dt <- cbind(ids,draws_dt)
-  
-  return(draws_dt)
+  # Neural network autoregression model (nnetar), fit separately per location.
+  # Input y is log-normalized visits per 10K population (already in log space).
+  # Forecasts w weeks ahead and returns d simulation draws per location.
+
+  locations <- unique(dataset$location_id)
+
+  results_list <- vector("list", length(locations))
+
+  for (i in seq_along(locations)) {
+    loc <- locations[i]
+    loc_data <- dataset[location_id == loc]
+    setorder(loc_data, time_id)
+
+    # Build time series for this location.
+    # No frequency set (ts() defaults to 1) because 8 obs span < 1 year and
+    # within-county annual seasonality cannot be estimated from this window.
+    data_ts <- ts(loc_data$y)
+
+    # Fit nnetar:
+    #   p=2   : use 2 lagged weeks as AR inputs (appropriate for 8-obs training window)
+    #   P=0   : no seasonal lags (frequency=1, so seasonal structure is undefined)
+    #   size=2: small hidden layer to avoid overfitting with 8 training points
+    #   lambda=NULL: data is already log-normalized; no additional transformation needed
+    #   repeats=20: enough ensemble networks for stable estimates on a short series
+    tmp_model <- nnetar(data_ts, p = 2, P = 0, size = 2, repeats = 20, lambda = NULL)
+
+    # Generate d simulation draws for the w-week-ahead forecast.
+    # Each simulate() call draws one stochastic path; we keep only step w.
+    draws <- sapply(seq_len(d), function(x) {
+      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+      sim[w]
+    })
+
+    # Compute sigma as RMSE of in-sample residuals
+    resids <- residuals(tmp_model)
+    sigma <- sqrt(mean(resids^2, na.rm = TRUE))
+
+    # Assemble one-row-per-location result (wide by draw)
+    draws_dt <- as.data.table(t(draws))
+    setnames(draws_dt, paste0("draw_", seq_len(d)))
+
+    ids <- data.table(
+      model       = "nnetar_model",
+      location_id = loc,
+      time_id     = max(loc_data$time_id) + w,
+      sigma       = sigma
+    )
+    results_list[[i]] <- cbind(ids, draws_dt)
+  }
+
+  return(rbindlist(results_list))
 }
