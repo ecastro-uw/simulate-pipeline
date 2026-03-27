@@ -48,7 +48,8 @@ models <- configs$models
 min_train_t <- max(data_req_dt[weeks_ahead==configs$w, ..models])
 
 pipeline_inputs <- list(configs = configs, min_train_t = min_train_t,
-                        code_dir = code_dir, input_dir = input_dir, group_id = group)
+                        code_dir = code_dir, input_dir = input_dir, out_dir = out_dir,
+                        group_id = group)
 
 # RUN THE PIPELINE
 result <- pipeline(pipeline_inputs)

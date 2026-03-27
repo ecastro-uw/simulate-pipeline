@@ -3,10 +3,10 @@ country: USA # USA or Brazil
 location_type: counties  #counties or states
 location_list:
 mandates: restaurant     # restaurant or bar
-imposition: first        # first or second
+imposition: second        # first or second
 data_source: safegraph   # safegraph or google
 models: #candidate models to be included in the ensemble
-  - lm_mandates
+  - nnetar_model
 perform_meas: MSE
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws

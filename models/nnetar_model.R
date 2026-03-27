@@ -1,7 +1,7 @@
 nnetar_model <- function(dataset, w, d){
 
   # Description of function:
-  # Neural network autoregression model (nnetar), fit separately per location.
+  # Neural network auto-regressive model, fit separately per location.
   # Input y is log-normalized visits per 10K population (already in log space).
   # Forecasts w weeks ahead and returns d simulation draws per location.
 
@@ -15,7 +15,7 @@ nnetar_model <- function(dataset, w, d){
     setorder(loc_data, time_id)
 
     # Build time series for this location.
-    # No frequency set (ts() defaults to 1) because 8 obs span < 1 year and
+    # No frequency set (ts() defaults to 1) because < 1 year of data and
     # within-county annual seasonality cannot be estimated from this window.
     data_ts <- ts(loc_data$y)
 
