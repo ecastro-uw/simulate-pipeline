@@ -172,7 +172,7 @@ prep_data <- function(pipeline_inputs){
   }
   
   # Save out the problem log
-  fwrite(problem_log, fwrite(paste0(out_dir,'/logs/dropped_locs_group_', pipeline_inputs$group_id,'.csv')))
+  fwrite(problem_log, paste0(out_dir,'/logs/dropped_locs_group_', pipeline_inputs$group_id,'.csv'))
   
   # Return the dataset
   return(dt)
