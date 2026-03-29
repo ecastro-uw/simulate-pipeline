@@ -6,6 +6,7 @@ library(ggplot2)
 library(sf)
 library(RColorBrewer)
 library(patchwork)
+library(cowplot)
 library(stringr)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
@@ -107,19 +108,33 @@ for (mandate_type in mandate_types) {
   dev.off()
 }
 
-# Combined 2x2 grid: shared interval legend, auto A/B/C/D panel tags
+# Combined figure: onset legends under their own panels (A, B);
+# shared interval legend centered below C and D.
+
+# Row 1: onset maps — keep legend at bottom of each panel
+p_A <- plot_pairs[['restaurant']]$onset    + theme(legend.position = 'bottom')
+p_B <- plot_pairs[['bar']]$onset           + theme(legend.position = 'bottom')
+
+# Row 2: interval maps — no legend (will be placed separately)
+p_C <- plot_pairs[['restaurant']]$interval + theme(legend.position = 'none')
+p_D <- plot_pairs[['bar']]$interval        + theme(legend.position = 'none')
+
+# Extract interval legend as a grob, centered, to use as its own row
+interval_leg <- cowplot::get_legend(
+  plot_pairs[['restaurant']]$interval +
+    theme(legend.position = 'bottom', legend.justification = 'center')
+)
+
 combined_plot <-
-  (plot_pairs[['restaurant']]$onset  | plot_pairs[['restaurant']]$interval) /
-  (plot_pairs[['bar']]$onset         | plot_pairs[['bar']]$interval)        +
-  plot_layout(guides = 'collect') +
+  (p_A | p_B) /
+  (p_C | p_D) /
+  wrap_elements(interval_leg) +
+  plot_layout(heights = c(1, 1, 0.15)) +
   plot_annotation(
-    title     = "Second COVID Mandate Timing and Intervals by U.S. County",
+    title      = "Second Round of COVID-19 Bar & Restaurant Mandates by U.S. County",
     tag_levels = 'A'
   ) &
-  theme(
-    legend.position  = 'bottom',
-    plot.tag         = element_text(face = 'bold', size = 10)
-  )
+  theme(plot.tag = element_text(face = 'bold', size = 10))
 
 pdf(paste0(output_root, "US_second_mandates.pdf"), width = 14, height = 10)
 print(combined_plot)
