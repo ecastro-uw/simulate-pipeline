@@ -5,75 +5,122 @@ library(data.table)
 library(ggplot2)
 library(sf)
 library(RColorBrewer)
+library(patchwork)
+library(stringr)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
 
 # dirs
-input_root <- "/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/"
+input_root  <- "/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/"
+output_root <- "/ihme/scratch/users/ems2285/thesis/aim_3/"
 shape_file_path <- "/snfs1/WORK/11_geospatial/admin_shapefiles/2024_07_29/lbd_standard_admin_2.shp"
 
-# args
-mandate_type <- 'bar'
+# Shared interval factor levels and colors (same for both mandate types)
+interval_levels <- c('<2 weeks', '2-9 weeks', '10-19 weeks', '20-29 weeks', '30+ weeks')
+COLS_interval   <- setNames(brewer.pal(5, "YlGnBu"), interval_levels)
 
-# Load the data
-dt <- fread(paste0(input_root,'second_',mandate_type,'_close.csv'))
-
-# Calculate the number of weeks between 2nd onset and 1st lift
-dt[, interval := onset_date - prev_lift]
-dt[, interval_wk := floor((onset_date - prev_lift)/7)]
-dt[, interval_cat := ifelse(interval_wk<2, '<2 weeks',
-                            ifelse(interval_wk<10, '2-9 weeks',
-                                   ifelse(interval_wk<20, '10-19 weeks',
-                                          ifelse(interval_wk<30, '20-29 weeks', '30+ weeks'))))]
-dt[, interval_cat := factor(interval_cat, levels=unique(dt[order(interval), interval_cat]))]
-
-# Format onset date
-dt[, onset_date_cat := factor(format(dt$onset_date, '%b %Y'),
-                              levels = unique(format(sort(dt$onset_date), '%b %Y')))]
-
-
-# Prep the map
+# Load and subset shapefile once
 map_A2_data <- st_read(shape_file_path)
-map_A2_data <- map_A2_data[map_A2_data$ADM0_NAME == "United States",]
-map_A2_data_contiguous <- map_A2_data[-which(map_A2_data$ADM1_NAME %in% c("Alaska", "Hawaii")),]
-# Add data 
-map_A2_data_contiguous <- merge(map_A2_data_contiguous, dt[,.(location_id, onset_date_cat, interval_cat)],
-                                by.x='loc_id', by.y='location_id', all.x=T)
+map_A2_data <- map_A2_data[map_A2_data$ADM0_NAME == "United States", ]
+map_contiguous <- map_A2_data[-which(map_A2_data$ADM1_NAME %in% c("Alaska", "Hawaii")), ]
 
-# Define colors
-COLS <- colorRampPalette(brewer.pal(9,"YlGnBu"))(length(unique(dt$onset_date_cat)))
-COLS2 <- brewer.pal(5,"YlGnBu")
+# Shared theme for all map panels
+map_theme <- theme(
+  panel.background  = element_blank(),
+  axis.text         = element_blank(),
+  axis.ticks        = element_blank(),
+  plot.title        = element_text(size = 10),
+  legend.key.size   = unit(0.4, "cm"),
+  legend.text       = element_text(size = 7),
+  legend.title      = element_text(size = 8)
+)
 
-# Plot onset date of 2nd imposition
-onset_map_bar <- ggplot(data = map_A2_data_contiguous) +
-  geom_sf(aes(geometry = geometry, fill = onset_date_cat)) + 
-  scale_fill_manual(name = "Onset Date", values=COLS) +
-  guides(fill = guide_legend(nrow = 2, byrow=T, position='bottom', title.position='top', title.hjust=0.5)) +
-  ggtitle(paste("Timing of Second", str_to_sentence(mandate_type), "Mandate")) +
+# Build plots for each mandate type
+mandate_types <- c('restaurant', 'bar')
+plot_pairs <- list()
+
+for (mandate_type in mandate_types) {
+
+  dt <- fread(paste0(input_root, 'second_', mandate_type, '_close.csv'))
+
+  # Weeks between 2nd onset and 1st lift
+  dt[, interval_wk  := floor(as.numeric(onset_date - prev_lift) / 7)]
+  dt[, interval_cat := factor(
+    fcase(
+      interval_wk < 2,  '<2 weeks',
+      interval_wk < 10, '2-9 weeks',
+      interval_wk < 20, '10-19 weeks',
+      interval_wk < 30, '20-29 weeks',
+      default =         '30+ weeks'
+    ),
+    levels = interval_levels
+  )]
+
+  # Onset date category (sorted chronologically)
+  onset_levels <- unique(format(sort(dt$onset_date), '%b %Y'))
+  dt[, onset_date_cat := factor(format(onset_date, '%b %Y'), levels = onset_levels)]
+  COLS_onset <- colorRampPalette(brewer.pal(9, "YlGnBu"))(length(onset_levels))
+
+  # Merge data onto shapefile
+  map_dt <- merge(
+    map_contiguous,
+    dt[, .(location_id, onset_date_cat, interval_cat)],
+    by.x = 'loc_id', by.y = 'location_id', all.x = TRUE
+  )
+
+  type_label <- str_to_sentence(mandate_type)
+
+  # Panel: timing of 2nd imposition
+  onset_map <- ggplot(map_dt) +
+    geom_sf(aes(geometry = geometry, fill = onset_date_cat), color = NA) +
+    scale_fill_manual(
+      name     = paste(type_label, "onset date"),
+      values   = COLS_onset,
+      na.value = "grey85"
+    ) +
+    guides(fill = guide_legend(nrow = 3, byrow = TRUE,
+                               title.position = 'top', title.hjust = 0.5)) +
+    labs(title = paste(type_label, "\u2014 Timing of Second Mandate")) +
+    map_theme
+
+  # Panel: interval between 1st lift and 2nd onset
+  interval_map <- ggplot(map_dt) +
+    geom_sf(aes(geometry = geometry, fill = interval_cat), color = NA) +
+    scale_fill_manual(
+      name     = "Weeks since first mandate",
+      values   = COLS_interval,
+      na.value = "grey85",
+      drop     = FALSE
+    ) +
+    guides(fill = guide_legend(nrow = 1, byrow = TRUE,
+                               title.position = 'top', title.hjust = 0.5)) +
+    labs(title = paste(type_label, "\u2014 Interval Since First Mandate")) +
+    map_theme
+
+  plot_pairs[[mandate_type]] <- list(onset = onset_map, interval = interval_map)
+
+  # Individual PDF (one per mandate type)
+  pdf(paste0(output_root, "US_second_", mandate_type, "_mandates.pdf"), width = 9, height = 5)
+  print(onset_map + interval_map + plot_layout(guides = 'collect') &
+          theme(legend.position = 'bottom'))
+  dev.off()
+}
+
+# Combined 2x2 grid: shared interval legend, auto A/B/C/D panel tags
+combined_plot <-
+  (plot_pairs[['restaurant']]$onset  | plot_pairs[['restaurant']]$interval) /
+  (plot_pairs[['bar']]$onset         | plot_pairs[['bar']]$interval)        +
+  plot_layout(guides = 'collect') +
+  plot_annotation(
+    title     = "Second COVID Mandate Timing and Intervals by U.S. County",
+    tag_levels = 'A'
+  ) &
   theme(
-    panel.background = element_blank(),
-    axis.text = element_blank(),
-    axis.ticks = element_blank())
+    legend.position  = 'bottom',
+    plot.tag         = element_text(face = 'bold', size = 10)
+  )
 
-# Plot interval between 1st and 2nd imposition
-interval_map_bar <- ggplot(data = map_A2_data_contiguous) +
-  geom_sf(aes(geometry = geometry, fill = interval_cat)) + 
-  scale_fill_manual(name = "Interval", values=COLS2) +
-  guides(fill = guide_legend(nrow = 1, byrow=T, position='bottom', title.position='top', title.hjust=0.5)) +
-  ggtitle(paste("Interval Between First and Second", str_to_sentence(mandate_type), "Mandate")) +
-  theme(
-    panel.background = element_blank(),
-    axis.text = element_blank(),
-    axis.ticks = element_blank())
-
-pdf(paste0("/ihme/scratch/users/ems2285/thesis/aim_3/US_second_", mandate_type,"_mandates.pdf"))
-onset_map_bar
-interval_map_bar
-dev.off()
-
-
-# Make a grid of plots
-pdf(paste0("/ihme/scratch/users/ems2285/thesis/aim_3/US_second_mandates.pdf"), width=9)
-onset_map + interval_map + onset_map_bar + interval_map_bar
+pdf(paste0(output_root, "US_second_mandates.pdf"), width = 14, height = 10)
+print(combined_plot)
 dev.off()
