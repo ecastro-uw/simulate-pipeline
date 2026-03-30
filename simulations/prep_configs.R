@@ -39,6 +39,22 @@ prep_configs <- function(config_dir, out_dir){
                   L = config_sim$L))
   }
   
+  if(config_sim$data_model == 'arima_model'){
+    params <- as.data.table(
+      expand.grid(data_model = as.character(config_sim$data_model),
+                  fit_model = as.character(config_sim$fit_model),
+                  t = config_sim$t,
+                  theta = config_sim$theta,
+                  y0 = config_sim$y0,
+                  phi = config_sim$arima_model$phi,
+                  mu = config_sim$arima_model$mu,
+                  sigma = config_sim$arima_model$sigma,
+                  B = config_sim$B,
+                  R = config_sim$R,
+                  d = config_sim$d,
+                  L = config_sim$L))
+  }
+
   if (config_sim$data_model %in% c('naive_flat_1', 'naive_slope_2', 'ensemble')){
     if(config_sim$naive_mods$use_ratio==F){
       params <- as.data.table(

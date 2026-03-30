@@ -20,6 +20,33 @@ simulate_data <- function(param_set, pipeline_inputs){
   beta1 <- if(!is.null(param_set$beta1)) param_set$beta1 else NA
   beta2 <- if(!is.null(param_set$beta2)) param_set$beta2 else NA
   sigma <- if(!is.null(param_set$sigma)) param_set$sigma else NA
+  phi <- if(!is.null(param_set$phi)) param_set$phi else NA
+  mu <- if(!is.null(param_set$mu)) param_set$mu else NA
+
+  # ARIMA(1,0,0) model: y_t = mu + phi*(y_{t-1} - mu) + epsilon, epsilon ~ N(0, sigma^2)
+  # Mirrors the pooled AR(1) structure of models/arima_model.R: shared phi across all
+  # locations, with each location starting from y0 and evolving independently.
+  if(data_model == 'arima_model'){
+
+    sim_y <- matrix(NA_real_, nrow = L, ncol = t + 1)
+    sim_y[, 1] <- y0
+    eps <- matrix(rnorm(L * t, mean = 0, sd = sigma), nrow = L, ncol = t)
+    for (j in 2:(t + 1)) {
+      sim_y[, j] <- mu + phi * (sim_y[, j - 1] - mu) + eps[, j - 1]
+    }
+
+    # Apply treatment effect at the final time step
+    sim_y[, t + 1] <- sim_y[, t + 1] - theta
+
+    # Reshape to long format
+    dt <- as.data.table(sim_y)
+    dt[, location_id := .I]
+    dt <- melt(dt, id.vars = 'location_id', variable.name = 'time_id', value.name = 'y')
+    dt[, time_id := as.numeric(sub('V', '', time_id)) - (t + 1)]
+    dt <- dt[order(location_id, time_id)]
+
+    return(dt)
+  }
 
   # Simple linear model: y_{t+1} = beta0 + beta1 * x_t + epsilon
   if(data_model == 'simple_lm'){
