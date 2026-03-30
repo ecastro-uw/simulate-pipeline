@@ -38,7 +38,7 @@ arima_model <- function(dataset, w, d) {
   # NA in the second position tells Arima() to estimate the mean freely.
   # simulate() will then use the location's own residual variance for draws.
 
-  locations    <- unique(dataset$location_id)
+  locations    <- unique(dt$location_id)
   results_list <- vector("list", length(locations))
 
   for (i in seq_along(locations)) {
@@ -67,7 +67,7 @@ arima_model <- function(dataset, w, d) {
     setnames(draws_dt, paste0("draw_", seq_len(d)))
 
     ids <- data.table(
-      model       = "arima_forecast",
+      model       = "arima_model",
       location_id = loc,
       time_id     = max(loc_data$time_id) + w,
       sigma       = sigma
