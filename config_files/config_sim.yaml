@@ -1,9 +1,8 @@
 ---
 data_model: arima_model
-fit_model: ensemble
+fit_model: arima_model
 t: 
   - 8
-  - 15
 theta: 1
 naive_mods:
   use_ratio: no
@@ -22,11 +21,15 @@ ar_simple_lm:
   beta0: 0
   beta1: 2
   beta2: 1
-  sigma: 0.5
+  sigma: 1
 arima_model:
   phi: 0.7
-  mu: 0
-  sigma: 1
+  mu: 
+    - 0
+    - -0.2
+  sigma: 
+    - 0
+    - 0.5
 p.s: 0
 y0: 0
 B: 1
