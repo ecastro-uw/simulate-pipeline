@@ -67,33 +67,6 @@ dt_2016 <- fread(input_path)[year==2016 & mode=='TOTAL' & party %in% c('REPUBLIC
 # Add a location id
 dt2_2016 <- merge(dt_2016, hierarchy[level==3, .(location_id, county_fips = local_id)], by='county_fips', all.x=T)
 
-# Apply same manual fixes to 2016 data
-# Colorado
-co_2016 <- dt2_2016[state=='colorado' & county %in% c('adams', 'arapahoe', 'boulder', 'broomfield', 'denver', 'jefferson', 'weld'),
-    .(votes = sum(votes),
-      total_votes = sum(total_votes)), by=c('state','candidate','party')]
-co_2016$county_fips <- NA
-co_2016$county <- "weld, boulder, adams, jefferson, denver, arapahoe, broomfield"
-co_2016$location_id <- 94092
-dt2_2016 <- rbind(dt2_2016[! (state=='colorado' & county %in% c('adams', 'arapahoe', 'boulder', 'broomfield', 'denver', 'jefferson', 'weld'))], co_2016)
-
-# New Mexico
-nm_2016 <- dt2_2016[state=='new mexico' & county %in% c('cibola', 'valencia'),
-          .(votes = sum(votes),
-            total_votes = sum(total_votes)), by=c('state','candidate','party')]
-nm_2016$county_fips <- NA
-nm_2016$county <- 'cibola, valencia'
-nm_2016$location_id <- 94066
-dt2_2016 <- rbind(dt2_2016[! (state=='new mexico' & county %in% c('cibola','valencia'))], nm_2016)
-
-# Florida
-dt2_2016[state=='florida' & county == 'miami-dade', location_id:=94081]
-# Montana
-dt2_2016[state=='montana' & county == 'park', location_id:=94080]
-# South Dakota
-dt2_2016[state=='south dakota' & county == 'jackson', location_id:=94082]
-dt2_2016[state=='south dakota' & county == 'oglala lakota', location_id:=94084]
-
 # Remove any rows with missing location_id in 2016 data
 dt2_2016 <- dt2_2016[! is.na(location_id)]
 
