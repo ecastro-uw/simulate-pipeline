@@ -66,3 +66,28 @@ dt_2016 <- fread(input_path)[year==2016 & mode=='TOTAL' & party %in% c('REPUBLIC
 
 # Add a location id
 dt2_2016 <- merge(dt_2016, hierarchy[level==3, .(location_id, county_fips = local_id)], by='county_fips', all.x=T)
+
+# Remove any rows with missing location_id in 2016 data
+dt2_2016 <- dt2_2016[! is.na(location_id)]
+
+# Add year variable to both datasets
+dt2[, year := 2020]
+dt2_2016[, year := 2016]
+
+# Identify counties with complete 2020 data (exactly 2 rows: one per party)
+complete_2020 <- dt2[, .N, by = location_id][N == 2, location_id]
+
+# For all other counties, use 2016 data as fallback
+dt2_2016_fill <- dt2_2016[! location_id %in% complete_2020]
+
+# Combine complete 2020 counties with 2016 fallback counties
+final <- rbind(dt2[location_id %in% complete_2020], dt2_2016_fill)
+
+# Keep only counties with exactly 2 rows (one per party)
+final <- final[location_id %in% final[, .N, by = location_id][N == 2, location_id]]
+
+# Select and order final columns
+final <- final[, .(location_id, state, county, county_fips, year, candidate, party, votes, total_votes)]
+
+# Save
+fwrite(final, out_path)
