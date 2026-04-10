@@ -20,24 +20,24 @@ print(args)
 list2env(args, environment()); rm(args)
 
 # Resolve context_id from the SLURM array task index
-task_id    <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID", unset = "1"))
-contexts   <- readLines(file.path(out_dir, 'inputs/contexts.txt'))
-context_id <- contexts[task_id]
-message("Task ", task_id, " -> context_id: ", context_id)
+task_id          <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID", unset = "1"))
+contexts         <- readLines(file.path(out_dir, 'inputs/contexts.txt'))
+this_context_id  <- as.integer(contexts[task_id])
+message("Task ", task_id, " -> context_id: ", this_context_id)
 
 # Load lookup tables saved by the launcher
 locs_by_context <- fread(file.path(out_dir, 'inputs/locs_by_context.csv'))
 context_lookup  <- fread(file.path(out_dir, 'inputs/context_lookup_table.csv'))
 
-# Gather all location IDs for this context (handles multiple rows per context_id)
-ctx_locs <- locs_by_context[context_id == get("context_id")]
-loc_list  <- unique(unlist(strsplit(ctx_locs$locations, split = ',')))
+# Gather all location IDs for this context
+# locs_by_context.csv has one row per location_id (columns: context_id, location_id)
+loc_list <- locs_by_context[context_id == this_context_id, location_id]
 if (length(loc_list) == 0) {
-  stop("No locations found in locs_by_context.csv for context_id: ", context_id)
+  stop("No locations found in locs_by_context.csv for context_id: ", this_context_id)
 }
 
 # Get context-specific settings row
-ctx_settings <- context_lookup[context_id == get("context_id")]
+ctx_settings <- context_lookup[context_id == this_context_id]
 
 # Define paths
 config_path   <- file.path(code_dir, 'config_files/config.yaml')
@@ -54,21 +54,26 @@ for (file in list_of_files) source(file)
 configs <- read_yaml(config_path)
 
 configs$location_list  <- loc_list
-configs$mandates       <- ctx_settings$mandates
-configs$imposition     <- ctx_settings$imposition
-configs$data_source    <- ctx_settings$data_source
+configs$mandates   <- ctx_settings$mandate_type                              # "restaurant" or "bar"
+configs$imposition <- c("1" = "first", "2" = "second")[as.character(ctx_settings$mandate_num)]
 
 # Override country / location_type if present in the lookup table
-if ('country' %in% names(ctx_settings))       configs$country        <- ctx_settings$country
-if ('location_type' %in% names(ctx_settings)) configs$location_type  <- ctx_settings$location_type
+if ('country' %in% names(ctx_settings))       configs$country       <- ctx_settings$country
+if ('location_type' %in% names(ctx_settings)) configs$location_type <- ctx_settings$location_type
 
-# Override candidate models if present in the lookup table (stored as comma-separated string)
-if ('models' %in% names(ctx_settings) && !is.na(ctx_settings$models)) {
-  configs$models <- trimws(strsplit(ctx_settings$models, split = ',')[[1]])
+# Build model list from binary flags (model_1 ... model_20).
+# NOTE: once model_1.R ... model_20.R are added, update
+#       config_files/min_data_requirement_by_model.csv to use the same column names.
+model_cols     <- grep("^model_", names(ctx_settings), value = TRUE)
+active_models  <- model_cols[as.integer(ctx_settings[, ..model_cols]) == 1]
+if (length(active_models) == 0) {
+  stop("No models flagged as active (value=1) in context_lookup_table.csv for context_id: ",
+       this_context_id)
 }
+configs$models <- active_models
 
 # Save per-context config snapshot for reproducibility
-write_yaml(configs, file.path(out_dir, 'inputs', paste0('config_', context_id, '.yaml')))
+write_yaml(configs, file.path(out_dir, 'inputs', paste0('config_', this_context_id, '.yaml')))
 
 # Compute minimum training period for this context's model set
 w           <- configs$w
@@ -82,7 +87,7 @@ pipeline_inputs <- list(
   code_dir    = code_dir,
   input_dir   = input_dir,
   out_dir     = out_dir,
-  group_id    = context_id   # used by prep_data() for logging dropped locations
+  group_id    = this_context_id   # used by prep_data() for logging dropped locations
 )
 
 # RUN THE PIPELINE
@@ -96,7 +101,7 @@ coverage_dt <- data.table(
 )
 
 # SAVE TO DISK
-suffix <- paste0('context_', context_id)
+suffix <- paste0('context_', this_context_id)
 fwrite(result$obs_dt,               file.path(out_dir, 'batched_output', paste0('obs_',            suffix, '.csv')))
 fwrite(result$candidate_mod_output, file.path(out_dir, 'batched_output', paste0('candidate_mods_', suffix, '.csv')))
 fwrite(result$pre_adj_output,       file.path(out_dir, 'batched_output', paste0('pred_pre_',       suffix, '.csv')))

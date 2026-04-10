@@ -5,8 +5,7 @@ location_list:
 mandates: restaurant     # restaurant or bar
 imposition: second        # first or second
 data_source: safegraph   # safegraph or google
-models: #candidate models to be included in the ensemble
-  - auto_arima_model
+models: #candidate models are now driven by model_1..model_20 flags in context_lookup_table.csv
 perform_meas: MSE
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
