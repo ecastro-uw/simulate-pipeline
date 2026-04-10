@@ -14,7 +14,7 @@ out_dir <- set_up(out_root)
 #out_dir <- file.path(out_root,'20260325.01')
 
 ## 2. LOAD LOCATION GROUPS ##
-loc_groups <- fread('/ihme/scratch/users/ems2285/thesis/aim_3/location_groups.csv')
+loc_groups <- fread('/ihme/scratch/users/ems2285/thesis/inputs/config_files/locs_by_context.csv')
 fwrite(loc_groups, paste0(out_dir,'/inputs/location_groups.csv'))
 
 ## 3. LAUNCH JOB ##

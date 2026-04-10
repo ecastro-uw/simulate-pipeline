@@ -3,9 +3,9 @@
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # Resolve args
-country <- 'Brazil' #USA or Brazil
-loc_resolution <- 'states' #states or counties
-mandate_type <- 'bar' #dining or bar
+country <- 'USA' #USA or Brazil
+loc_resolution <- 'counties' #states or counties
+mandate_type <- 'dining' #dining or bar
 var_name <- paste0(mandate_type,'_close')
 in_file_name <- paste0(var_name,'.csv')
 out_file_name <- ifelse(mandate_type=='dining', 'restaurant', mandate_type)
@@ -83,10 +83,14 @@ gathering <- one_mandate('gatherings50i100o')
 gym <- one_mandate('gym_pool_leisure_close')
 retail <- one_mandate('non_essential_retail_close')
 sah <- one_mandate('stay_at_home')
+dining <- one_mandate('dining_close')
+bar <- one_mandate('bar_close')
 
 all_mandates <- merge(edu, gathering, by=c('location_id','date'))
 all_mandates <- merge(all_mandates, gym, by=c('location_id','date'))
 all_mandates <- merge(all_mandates, retail, by=c('location_id','date'))
 all_mandates <- merge(all_mandates, sah, by=c('location_id','date'))
+all_mandates <- merge(all_mandates, dining, by=c('location_id','date'))
+all_mandates <- merge(all_mandates, bar, by=c('location_id','date'))
 
 fwrite(all_mandates, paste0(out_root,country,'_',loc_resolution,'/other_mandate_time_series.csv'))
