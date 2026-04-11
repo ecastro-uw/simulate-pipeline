@@ -23,8 +23,8 @@ model_1 <- function(dataset, w, d, sigma = NULL){
   
   # For each location, generate draws for the w-week-ahead forecast, assuming a normal distribution
   last_t <- dt[time_id == max(dt$time_id)]
-  draws_mat <- t(apply(last_t, 1, function(row){
-    rnorm(d, mean=row["y"], sd=resid_sd)
+  draws_mat <- t(sapply(last_t$y, function(y_val){
+    rnorm(d, mean=y_val, sd=resid_sd)
   }))
   draws_dt <- as.data.table(draws_mat)
   setnames(draws_dt, paste0("draw_", 1:d))
