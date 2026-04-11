@@ -1,5 +1,6 @@
+# Model 2: Naive Slope 2
 
-naive_slope_2 <- function(dataset, w, d, sigma = NULL){
+model_2 <- function(dataset, w, d, sigma = NULL){
 
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.
@@ -32,7 +33,7 @@ naive_slope_2 <- function(dataset, w, d, sigma = NULL){
   draws_dt <- as.data.table(draws_mat)
   setnames(draws_dt, paste0("draw_", 1:d))
   
-  ids <- data.table(model='naive_slope_2', location_id=point_est_dt$location_id, time_id=max(dt$time_id)+w, sigma = resid_sd)
+  ids <- data.table(model='model_2', location_id=point_est_dt$location_id, time_id=max(dt$time_id)+w, sigma = resid_sd)
   draws_dt <- cbind(ids,draws_dt)
   
   return(draws_dt)

@@ -8,8 +8,8 @@ make_predictions <- function(data, pipeline_inputs){
   list_of_models <- configs$models
   w <- configs$w
   d <- configs$d
-  min_train_t <- pipeline_inputs$min_train_t
-  max_train_t <- ifelse(configs$imposition=='first', configs$default_train_wks, length(unique(data[time_id<0]$time_id)))
+  min_train_t <- ifelse(configs$imposition==1, 5, 5) #TODO - update second imposition scenario
+  max_train_t <- ifelse(configs$imposition==1, configs$default_train_wks, length(unique(data[time_id<0]$time_id)))
   spread <- max_train_t - min_train_t + w # total number of weeks to be forecast (pre + post event)
   
   results <- vector("list", )

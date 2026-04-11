@@ -1,5 +1,6 @@
+# Model 1: Naive Flat 1
 
-naive_flat_1 <- function(dataset, w, d, sigma = NULL){
+model_1 <- function(dataset, w, d, sigma = NULL){
 
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.
@@ -28,7 +29,7 @@ naive_flat_1 <- function(dataset, w, d, sigma = NULL){
   draws_dt <- as.data.table(draws_mat)
   setnames(draws_dt, paste0("draw_", 1:d))
   
-  ids <- data.table(model='naive_flat_1', location_id=last_t$location_id, time_id=max(dt$time_id)+w, sigma = resid_sd)
+  ids <- data.table(model='model_1', location_id=last_t$location_id, time_id=max(dt$time_id)+w, sigma = resid_sd)
   draws_dt <- cbind(ids,draws_dt)
   
   return(draws_dt)

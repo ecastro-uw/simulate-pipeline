@@ -71,9 +71,10 @@ fwrite(third_close, paste0(out_root,country,'_',loc_resolution,'/third_',out_fil
 
 # Other Mandate Time Series
 one_mandate <- function(mandate_name){
-  temp_dt <- fread(paste0(input_root, mandate_name, '.csv'))[location_id %in% loc_list & date<'2022-01-01',
+  temp_dt <- fread(paste0(input_root, mandate_name, '.csv'))[location_id %in% loc_list,
                                                             .(location_id, date, mandate=get(mandate_name))]
   temp_dt[, date := as.Date(date, format='%d.%m.%Y')]
+  temp_dt <- temp_dt[date<'2022-01-01']
   setnames(temp_dt, 'mandate', mandate_name)
   return(temp_dt)
 }

@@ -4,7 +4,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   code_dir <- pipeline_inputs$code_dir
   configs <- pipeline_inputs$configs
-  real_data <- ifelse('group_id' %in% names(pipeline_inputs)==T, T, F)
+  real_data_flag <- ifelse('loc_list' %in% names(pipeline_inputs)==T, T, F)
   
   source(file.path(code_dir,'simulations/1_simulate_data.R'))
   source(file.path(code_dir,'pipeline/1_prep_data.R'))
@@ -15,7 +15,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   ## PIPELINE 
   # (1) Simulate or prep data
   data_start <- Sys.time()
-  if (real_data){
+  if (real_data_flag){
     data <- prep_data(pipeline_inputs)
   } else {
     data <- simulate_data(param_set, pipeline_inputs)

@@ -1,0 +1,14 @@
+---
+lookup_suffix: test 
+perform_meas: MSE
+w: 1  #number of weeks ahead to forecast
+d: 1000 #number of draws
+padding: 2 #number of weeks after prior mandate lift to disregard
+default_train_wks: 8
+seed: 1030
+save_draws?: no
+save_all_time_steps?: yes
+save_pre_adj_draws?: no
+save_all_pre_adj_time_steps?: no
+save_candidate_draws?: no
+...
