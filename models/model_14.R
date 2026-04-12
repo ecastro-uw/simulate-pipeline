@@ -1,3 +1,6 @@
+# Model 14: ARIMA(1,1,0)
+# Covariates: None
+
 model_14 <- function(dataset, w, d) {
 
   # Description of function:
