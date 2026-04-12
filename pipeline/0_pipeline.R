@@ -35,6 +35,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   ensemble_out_list <- ensemble(data, preds_by_model, pipeline_inputs)
   unadj_results <- ensemble_out_list$unadj_results
   weights_dt <- ensemble_out_list$weights
+  fit_stats_dt <- ensemble_out_list$fit_stats
   ensemble_end <- Sys.time()
   ensemble_time <- ensemble_end - ensemble_start
   
@@ -157,6 +158,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
               multiplier = multiplier,
               results_output = results_output,
               weights_dt = weights_dt,
+              fit_stats_dt = fit_stats_dt,
               sigmas_dt = sigmas_dt,
               time_stamps = time_stamps))
 }

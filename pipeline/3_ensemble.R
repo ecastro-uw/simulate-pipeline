@@ -22,15 +22,21 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
     
     # Identify the weights that optimize model performance
     if (length(vals)==1){
-      fit <- optimize(f = perform_func, 
+      fit <- optimize(f = perform_func,
                       interval = c(-9,9),
                       forecasts = preds_dt[time_id<0],
                       observations = obs_dt,
                       list_of_models = list_of_models,
                       d = d)
       weights <- create_weights(fit$minimum)
+      fit_stats_dt <- data.table(
+        convergence    = NA_integer_,
+        objective_value = fit$objective,
+        n_function_evals = NA_integer_,
+        message        = NA_character_
+      )
     } else {
-      fit <- optim(par = vals, 
+      fit <- optim(par = vals,
                    fn = perform_func,
                    forecasts = preds_dt[time_id<0],
                    observations = obs_dt,
@@ -38,8 +44,14 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
                    d=d,
                    method = 'L-BFGS-B')
       weights <- create_weights(fit$par)
+      fit_stats_dt <- data.table(
+        convergence      = fit$convergence,
+        objective_value  = fit$value,
+        n_function_evals = fit$counts[['function']],
+        message          = ifelse(is.null(fit$message), NA_character_, fit$message)
+      )
     }
-    
+
     # Take a weighted average of model preds to get the ensemble preds.
     weights_dt <- data.table(model = list_of_models, weight = weights)
     preds_dt <- merge(preds_dt, weights_dt, by='model')
@@ -53,7 +65,13 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
     # use results from the only candidate model
     result <- preds_dt[, model := 'ensemble']
     weights_dt <- data.table(model = list_of_models, weight = 1)
+    fit_stats_dt <- data.table(
+      convergence      = NA_integer_,
+      objective_value  = NA_real_,
+      n_function_evals = NA_integer_,
+      message          = 'single model, no optimization'
+    )
   }
 
-  return(list(unadj_results = result, weights = weights_dt))
+  return(list(unadj_results = result, weights = weights_dt, fit_stats = fit_stats_dt))
 }
