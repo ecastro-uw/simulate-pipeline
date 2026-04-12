@@ -1,4 +1,7 @@
-auto_arima_model <- function(dataset, w, d) {
+# Model 15: auto.arima 
+# Covariates: None
+
+model_15 <- function(dataset, w, d) {
  
   dt <- copy(dataset)
   
@@ -29,7 +32,7 @@ auto_arima_model <- function(dataset, w, d) {
     setnames(draws_dt, paste0("draw_", seq_len(d)))
     
     ids <- data.table(
-      model       = "auto_arima_model",
+      model       = "model_15",
       location_id = loc,
       time_id     = max(loc_data$time_id) + w,
       sigma       = sigma
