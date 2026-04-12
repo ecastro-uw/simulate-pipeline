@@ -1,3 +1,7 @@
-context_id,country,ADMN,mandate_type,mandate_num,mandate_timing,outcome,pop_cat,pol_cat,n,model_1,model_2
-1,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,big,D,183,1,1
-2,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,big,M,248,1,1
+context_id,country,ADMN,mandate_type,mandate_num,mandate_timing,outcome,pop_cat,pol_cat,n,model_1,model_2,model_3,model_4,model_5,model_6,model_7,model_8,model_9,model_10,model_11,model_12,model_13,model_14,model_15,model_16,model_17,model_18,model_19,model_20
+1,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,big,D,183,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+2,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,big,M,248,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+3,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,big,R,524,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+4,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,small,D,117,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+5,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,small,M,164,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+6,USA,2,restaurant,1,Mar-Apr 2020,restaurant visits,small,R,1757,1,1,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
