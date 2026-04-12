@@ -1,6 +1,5 @@
-# Model 16: auto.arima with cases_lag2_sum external regressor
+# Model 16: auto.arima
 # Covariates: cases_lag2_sum (sum of cases_pc over previous 2 weeks)
-# Extension of model_15 (auto.arima without covariates)
 
 model_16 <- function(dataset, w, d) {
 
@@ -8,7 +7,6 @@ model_16 <- function(dataset, w, d) {
   setorder(dt, location_id, time_id)
 
   # Compute cases_lag2_sum: cases_pc[t-1] + cases_pc[t-2]
-  # Mirrors the covariate construction in model_4.R
   dt[, cases_lag2_sum := frollsum(shift(cases_pc, 1), n = 2, align = "right"), by = location_id]
 
   locations    <- unique(dt$location_id)

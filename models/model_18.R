@@ -1,7 +1,6 @@
-# Model 18: auto.arima with cases_lag2_sum and deaths_lag2_sum external regressors
+# Model 18: auto.arima 
 # Covariates: cases_lag2_sum (sum of cases_pc over previous 2 weeks)
 #             deaths_lag2_sum (sum of deaths_pc over previous 2 weeks)
-# Extension of model_16 (auto.arima with cases_lag2_sum only)
 
 model_18 <- function(dataset, w, d) {
 
@@ -9,7 +8,6 @@ model_18 <- function(dataset, w, d) {
   setorder(dt, location_id, time_id)
 
   # Compute covariates: var_pc[t-1] + var_pc[t-2] for cases and deaths.
-  # Mirrors covariate construction in model_4.R and model_5.R.
   dt[, cases_lag2_sum  := frollsum(shift(cases_pc,  1), n = 2, align = "right"), by = location_id]
   dt[, deaths_lag2_sum := frollsum(shift(deaths_pc, 1), n = 2, align = "right"), by = location_id]
 
