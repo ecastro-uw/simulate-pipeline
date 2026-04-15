@@ -9,9 +9,8 @@
 #     of seeing as many or more locations reject the null assuming each location was no more likely than 
 #     chance alone to reject.
 
-#.libPaths(c("/ihme/homes/ems2285/rpackages/", .libPaths()))
-install.packages('scoringutils',
-                 lib='/ihme/homes/ems2285/rpackages/')
+lib_dir <- file.path(Sys.getenv("HOME"), "rpackages")
+.libPaths(c(lib_dir, .libPaths()))
 
 #remotes::install_github("cmu-delphi/covidcast", ref = "main",
 #                        subdir = "R-packages/evalcast")
