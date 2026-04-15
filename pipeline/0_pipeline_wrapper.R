@@ -8,7 +8,7 @@ library(data.table)
 library(yaml)
 library(boot)
 library(MASS)
-library(forecast)
+library(forecast, quietly=T)
 
 
 # Get arguments from parser
@@ -27,7 +27,6 @@ context <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID", unset=1))
 config_path <- file.path(out_dir,'inputs/config.yaml')
 context_lookup_path <- file.path(out_dir,'inputs/context_lookup_table.csv')
 loc_lookup_path <- file.path(out_dir,'inputs/locs_by_context.csv')
-#data_req_path <- file.path(code_dir,'config_files/min_data_requirement_by_model.csv')
 
 # Source the pipeline script
 source(file.path(code_dir, "pipeline/0_pipeline.R"))

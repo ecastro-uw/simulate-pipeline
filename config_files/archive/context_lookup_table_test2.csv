@@ -1,0 +1,31 @@
+context_id,event,timing_cat,pop_cat,pol_cat,N,edu,gathering,gym,retail,sah,dining,bar
+1,first_restaurant,Mar-Apr 2020,big,D,157,0,0,0,0,0,0,0
+2,first_restaurant,Mar-Apr 2020,big,M,182,0,0,0,0,0,0,0
+3,first_restaurant,Mar-Apr 2020,big,R,238,0,0,0,0,0,0,0
+4,first_restaurant,Mar-Apr 2020,small,D,143,0,0,0,0,0,0,0
+5,first_restaurant,Mar-Apr 2020,small,M,230,0,0,0,0,0,0,0
+6,first_restaurant,Mar-Apr 2020,small,R,2043,0,0,0,0,0,0,0
+7,second_restaurant,Jun-Nov 2020,big,D,23,X,0,X,0,0,0,X
+8,second_restaurant,Jun-Nov 2020,big,M,33,X,0,X,0,0,0,X
+9,second_restaurant,Jun-Nov 2020,big,R,15,X,0,X,0,0,0,X
+10,second_restaurant,Jun-Nov 2020,small,D,7,X,0,0,0,0,0,X
+11,second_restaurant,Jun-Nov 2020,small,M,36,X,X,X,0,0,0,X
+12,second_restaurant,Jun-Nov 2020,small,R,228,X,X,X,0,0,0,X
+13,second_restaurant,Dec 2020-May 2021,big,D,14,0,X,0,0,0,0,X
+14,second_restaurant,Dec 2020-May 2021,big,M,13,0,0,0,0,0,0,X
+15,second_restaurant,Dec 2020-May 2021,big,R,23,0,0,0,0,0,0,X
+16,second_restaurant,Dec 2020-May 2021,small,D,12,X,X,0,0,0,0,X
+17,second_restaurant,Dec 2020-May 2021,small,M,11,X,X,0,0,0,0,X
+18,second_restaurant,Dec 2020-May 2021,small,R,68,0,X,0,0,0,0,X
+19,first_bar,Mar-Apr 2020,big,D,157,0,0,0,0,0,0,0
+20,first_bar,Mar-Apr 2020,big,M,182,0,0,0,0,0,0,0
+21,first_bar,Mar-Apr 2020,big,R,238,0,0,0,0,0,0,0
+22,first_bar,Mar-Apr 2020,small,D,143,0,0,0,0,0,0,0
+23,first_bar,Mar-Apr 2020,small,M,230,0,0,0,0,0,0,0
+24,first_bar,Mar-Apr 2020,small,R,2043,0,0,0,0,0,0,0
+25,second_bar,Jun 2020-May 2021,big,D,17,X,X,0,0,0,0,0
+26,second_bar,Jun 2020-May 2021,big,M,25,X,X,0,0,0,0,0
+27,second_bar,Jun 2020-May 2021,big,R,13,0,X,0,0,0,0,0
+28,second_bar,Jun 2020-May 2021,small,D,14,X,X,0,0,0,0,0
+29,second_bar,Jun 2020-May 2021,small,M,34,X,X,0,0,0,0,0
+30,second_bar,Jun 2020-May 2021,small,R,218,X,X,0,0,0,0,0

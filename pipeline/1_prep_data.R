@@ -21,7 +21,7 @@ prep_data <- function(pipeline_inputs){
   mandate <- configs$mandates
   
   # which imposition?
-  imposition <- ifelse(configs$imposition==1,'first','second')
+  imposition <- configs$imposition
   
   # which mobility data?
   data_source <- configs$data_source
@@ -51,16 +51,16 @@ prep_data <- function(pipeline_inputs){
                    location_list & top_category %like% cat_name, .(location_id, date, v = get(var_name))]
     setorder(outcome_dt, location_id, date)
     
-    # Calculate baseline for normalization
-    baseline_dt <- outcome_dt[date >= '2019-01-01' & date < '2019-04-02'] # jan-mar 2019
+    # Calculate baseline for normalization (use same period as Google)
+    baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06'] 
     # subset to locations with no missing data during the 91-day baseline period
-    complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 91, location_id]
+    complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
     baseline_dt <- baseline_dt[location_id %in% complete_baseline]
     # aggregate to the week level
-    baseline_dt[, week_id := rep(1:13, each = 7), by = location_id]
+    baseline_dt[, week_id := rep(1:5, each = 7), by = location_id]
     baseline_weekly <- baseline_dt[, .(v = sum(v)), by = c('location_id', 'week_id')]
     # calculate the mean value over the baseline period for each location
-    baseline <- baseline_weekly[, .(mean_jan_feb_mar = mean(v)), by = location_id]
+    baseline <- baseline_weekly[, .(mean_base = mean(v)), by = location_id]
     incomplete_baseline <- setdiff(location_list, complete_baseline)
 
     
@@ -74,19 +74,22 @@ prep_data <- function(pipeline_inputs){
                                 date < (onset_date + (configs$w*7))]
       
     } else{
-      # Calculate length of the shortest window/interval
-      # All locations set to shortest window for second mandates
-      min_window <- min(event_dt[, floor((onset_date - prev_lift - (configs$padding*7))/7)])
-      
       # Subset to appropriate window
-      outcome_dt <- merge(outcome_dt, event_dt[, .(location_id, onset_date)], by='location_id')
-      outcome_dt <- outcome_dt[date >= (onset_date - min_window*7) &
-                               date < (onset_date + (configs$w*7))]
+      outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
+      
+      outcome_dt[, start_date := {
+        base_date <- prev_lift + configs$padding*7
+        onset_dow  <- wday(onset_date)   # day of week for onset_date (1=Sun … 7=Sat)
+        base_dow   <- wday(base_date)    # day of week for base_date
+        days_to_add <- (onset_dow - base_dow) %% 7  # 0–6 additional days needed
+        base_date + days_to_add
+      }]
+      outcome_dt <- outcome_dt[date >= start_date & date < (onset_date + (configs$w*7))]
       
     }
     
     # Add week id
-    outcome_dt[, time_id := floor((date - onset_date) / 7), by = location_id]
+    outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
     
     # Check for missingness
     if (imposition=='first'){
@@ -94,13 +97,16 @@ prep_data <- function(pipeline_inputs){
       missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
       
       # Check if any locations have missing days
-      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N<7]
+      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+      
+      missing_outcome_data <- unique(c(missing_weeks$location_id, missing_days$location_id))
     } else {
-      #TODO - fill in for second impositions
+      # Check if any locations have missing days
+      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+      missing_outcome_data <- missing_days$location_id
     }
     
     # Drop any locations with missing data during the study period
-    missing_outcome_data <- unique(c(missing_weeks$location_id, missing_days$location_id))
     outcome_dt <- outcome_dt[! location_id %in% missing_outcome_data]
     
   } else{
@@ -171,7 +177,7 @@ prep_data <- function(pipeline_inputs){
 
     # Normalize by 2019 baseline then convert to log space
     weekly_dt <- merge(weekly_dt, baseline, by = 'location_id')
-    dt <- weekly_dt[, y := log(v / mean_jan_feb_mar)] #TODO - how to handle instances when v=0? results in y=-Inf
+    dt <- weekly_dt[, y := log(v / mean_base)] #TODO - how to handle instances when v=0? results in y=-Inf
     
     dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
                  pct_edu, pct_gathering, pct_gym, pct_retail,

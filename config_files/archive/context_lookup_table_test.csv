@@ -1,0 +1,13 @@
+context_id,country,ADMN,mandate_type,mandate_num,mandate_timing,outcome,pop_cat,pol_cat,n,model_1,model_2,model_3,model_4,model_5,model_6,model_7,model_8,model_9,model_10,model_11,model_12,model_13,model_14,model_15,model_16,model_17,model_18,model_19,model_20
+1,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,big,D,23,1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0
+2,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,big,M,33,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,0,0,0,0,0
+3,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,big,R,15,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,0,0,0,0,0
+4,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,small,D,7,1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0
+5,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,small,M,36,1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0
+6,USA,2,restaurant,2,Jun-Nov 2020,restaurant visits,small,R,228,1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0
+7,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,big,D,14,1,1,1,1,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0
+8,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,big,M,13,1,1,1,1,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0
+9,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,big,R,23,1,1,1,1,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0
+10,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,small,D,12,1,1,1,1,1,1,1,0,1,0,0,1,0,1,1,0,0,0,0,0
+11,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,small,M,11,1,1,1,1,1,0,1,0,1,1,0,0,0,1,1,0,0,0,0,0
+12,USA,2,restaurant,2,Dec 2020-May 2021,restaurant visits,small,R,68,1,1,1,1,1,0,1,0,1,1,0,0,0,1,1,0,0,0,0,0

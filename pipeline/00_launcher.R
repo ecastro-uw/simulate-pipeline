@@ -15,7 +15,7 @@ library(yaml)
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260411.01')
+#out_dir <- file.path(out_root,'20260414.01')
 
 
 ## 2. LOAD CONFIG FILE AND LOOKUP TABLE ##
@@ -25,7 +25,7 @@ configs <- read_yaml(config_path)
 write_yaml(configs, paste0(out_dir,'/inputs/config.yaml'))
 
 # Context look-up table
-context_lookup <- fread(paste0(code_dir,'/config_files/context_lookup_table_',configs$lookup_suffix,'.csv'))
+context_lookup <- fread(paste0(code_dir,'/config_files/context_lookup_',configs$lookup_suffix,'.csv'))
 n_contexts <- nrow(context_lookup)
 fwrite(context_lookup, paste0(out_dir,'/inputs/context_lookup_table.csv'))
 

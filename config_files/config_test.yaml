@@ -1,5 +1,5 @@
 ---
-lookup_suffix: test 
+lookup_suffix: testing 
 perform_meas: MSE
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
