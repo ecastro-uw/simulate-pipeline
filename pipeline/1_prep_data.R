@@ -93,17 +93,17 @@ prep_data <- function(pipeline_inputs){
     
     # Check for missingness
     if (imposition=='first'){
-      # Check if any locations having missing weeks
+      # Check if any locations having missing weeks (we expect exactly 9 weeks for first imposition)
       missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
       
-      # Check if any locations have missing days
+      # Check if any locations have missing days (each time_id should have 7 rows associated with it)
       missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
       
       missing_outcome_data <- unique(c(missing_weeks$location_id, missing_days$location_id))
     } else {
-      # Check if any locations have missing days
-      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-      missing_outcome_data <- missing_days$location_id
+      # Check if the onset date extends beyond the available data
+      onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]$location_id
+      missing_outcome_data <- onset_after_data_ends
     }
     
     # Drop any locations with missing data during the study period
@@ -115,13 +115,23 @@ prep_data <- function(pipeline_inputs){
   }
   
   # Output a log of missing locs with reasons for missingness
-  problem_log <- data.table(location_id = c(missing_event_data, missing_outcome_data),
-                            reason = c(rep("Mandate was not imposed / No mandate data", length(missing_event_data)),
-                                       rep("Outcome data are incomplete", length(missing_outcome_data)))
-  )
+  problem_log <- data.table(location_id = missing_event_data,
+                            reason = rep("Missing mandate data", length(missing_event_data))
+                            )
+  if(imposition=='first'){
+    rows <- data.table(location_id = c(missing_days, missing_weeks),
+                       reason = c(rep("Missing days of mobility data", length(missing_days)),
+                                  rep("Missing weeks of mobility data"), length(missing_weeks)))
+  } else {
+    rows <- data.table(location_id = onset_after_data_ends,
+                       reason = rep("Mandate onset is after end of mobility data", length(onset_after_data_ends)))
+  }
+  problem_log <- rbind(problem_log, rows)
+  
   if(data_source=='safegraph'){
-    problem_log <- rbind(problem_log, data.table(location_id=incomplete_baseline,
-                                                 reason=rep('Incomplete baseline data', length(incomplete_baseline))))
+    rows <- data.table(location_id=incomplete_baseline,
+                       reason=rep('Incomplete baseline data', length(incomplete_baseline)))
+    problem_log <- rbind(problem_log, rows)
   }
   
   
@@ -188,6 +198,10 @@ prep_data <- function(pipeline_inputs){
   if(nrow(problem_log)>0){
     fwrite(problem_log, paste0(out_dir,'/logs/dropped_locs_context_', pipeline_inputs$context_id,'.csv'))
   }
+  
+  # Ensure dt is properly sorted
+  setorder(dt, location_id, time_id)
+
   # Return the dataset
   return(dt)
 }

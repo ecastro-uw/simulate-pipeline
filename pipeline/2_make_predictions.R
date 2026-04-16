@@ -8,31 +8,27 @@ make_predictions <- function(data, pipeline_inputs){
   list_of_models <- configs$models
   w <- configs$w
   d <- configs$d
-  min_train_t <- ifelse(configs$imposition==1, 5, 5) #TODO - update second imposition scenario
-  max_train_t <- ifelse(configs$imposition==1, configs$default_train_wks, length(unique(data[time_id<0]$time_id)))
-  spread <- max_train_t - min_train_t + w # total number of weeks to be forecast (pre + post event)
+  spread <- 4 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
   
   results <- vector("list", )
   # Use each model to forecast the desired number of time steps
-  pred_all <- function(mod, dt, spread, min_train_t, max_train_t, w, d){
+  pred_all <- function(mod, dt, spread, w, d){
     model <- get(mod)
+    
     # For each model, provide n weeks of training data and the model will produce d forecasts for the
-    # (n+w)th week. For all models, let n vary from min_train_t to max_train_t.
-
-    # Now make predictions for all time steps
+    # (n+w)th week. Iteratively hold out the last 4, 3, 2, and 1 weeks of data to make out-of-sample preds.
     list_of_results <- vector("list", spread)
-    index <- 0
-    for(ts in min_train_t:max_train_t){
-      index <- index+1
-      time_steps <- unique(dt$time_id)[1:ts]
-      train_dt <- dt[time_id %in% time_steps]
-      list_of_results[[index]] <- model(dataset=train_dt, w, d)
+    hold_out <- seq(spread, w)
+    for (i in seq_along(hold_out)){
+      drop_n <- hold_out[i]
+      train_dt <- dt[time_id <= (-drop_n)]
+      list_of_results[[i]] <- model(dataset=train_dt, w, d)
     }
     results_one_model <- rbindlist(list_of_results)
 
     return(results_one_model)
   }
-  predictions_dt <- rbindlist(lapply(list_of_models, pred_all, data, spread, min_train_t, max_train_t, w, d))
+  predictions_dt <- rbindlist(lapply(list_of_models, pred_all, data, spread, w, d))
   
   return(predictions_dt)
 }

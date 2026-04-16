@@ -15,7 +15,7 @@ library(yaml)
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260414.01')
+#out_dir <- file.path(out_root,'20260415.01')
 
 
 ## 2. LOAD CONFIG FILE AND LOOKUP TABLE ##

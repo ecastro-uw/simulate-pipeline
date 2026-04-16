@@ -2,7 +2,7 @@
 # Covariates: Gathering restrictions, School closures, Bar closures, Gym closures
 # Note: Currently only supports w=1 (hard coded)
 
-model_12 <- function(dataset, w, d){
+model_13 <- function(dataset, w, d){
   
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)

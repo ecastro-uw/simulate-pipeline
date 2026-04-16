@@ -8,7 +8,7 @@ library(data.table)
 library(yaml)
 library(boot)
 library(MASS)
-library(forecast, quietly=T)
+library(forecast)
 
 
 # Get arguments from parser
@@ -62,15 +62,6 @@ pipeline_inputs <- list(configs = configs,
                         context_id = context,
                         loc_list = loc_list)
 
-# B. Min and max train periods
-#w <- configs$w
-#data_req_dt <- fread(data_req_path)
-#models <- configs$models
-#min_train_t <- max(data_req_dt[weeks_ahead==configs$w, ..models])
-
-#pipeline_inputs <- list(configs = configs, min_train_t = min_train_t,
-#                        code_dir = code_dir, input_dir = input_dir, out_dir = out_dir,
-#                        loc_list = loc_list)
 
 # RUN THE PIPELINE
 result <- pipeline(pipeline_inputs)
