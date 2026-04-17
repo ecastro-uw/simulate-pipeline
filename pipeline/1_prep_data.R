@@ -53,7 +53,7 @@ prep_data <- function(pipeline_inputs){
     
     # Calculate baseline for normalization (use same period as Google)
     baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06'] 
-    # subset to locations with no missing data during the 91-day baseline period
+    # subset to locations with no missing data during the 35-day baseline period
     complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
     baseline_dt <- baseline_dt[location_id %in% complete_baseline]
     # aggregate to the week level

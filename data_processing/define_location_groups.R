@@ -36,12 +36,14 @@ out_dir    <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
 pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
 min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
+padding          <- 2       # Waiting period after first lift
 max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
 min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
 min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
 mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
 mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
 epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
+
 
 # Load population data and define bins (big/small)
 pop_dt <- fread(file.path(input_root, 'population.csv'))
@@ -61,7 +63,8 @@ all_contexts <- data.table()
 event_list   <- c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar')
 
 for (event in event_list) {
-
+  
+  # Load the event data
   mandate_num  <- ifelse(substr(event, 1, 5) == 'first', 'first', 'second')
   cols_to_keep <- c('location_id', 'onset_date')
   if (mandate_num == 'second') cols_to_keep <- c(cols_to_keep, 'prev_lift')
@@ -78,7 +81,74 @@ for (event in event_list) {
     }
     event_dt <- event_dt[int_wks >= min_interval_wks]
   }
+  
+  # Load mobility data
+  cat_name <- ifelse(grepl('restaurant', event), 'Restaurants', 'Drinking')
+  outcome_dt <- fread(paste0(input_root,'/processed_safegraph_data.csv'))[top_category %like% cat_name, .(location_id, date, v = visits_per_10k)]
+  outcome_dt <- outcome_dt[! is.na(v)]
+  setorder(outcome_dt, location_id, date)
+  
+  # Check for locations missing from the mobility file
+  no_mob <- setdiff(event_dt$location_id, outcome_dt$location_id)
+  if (length(no_mob) > 0) {
+    drop_log[[paste0(event, '__no_mob')]] <- data.table(
+      location_id = no_mob, event = event, reason = 'no_mobility_data'
+    )
+  }
+  event_dt <- event_dt[! location_id %in% no_mob]
+  outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
+  
+  # Check for missing data in the baseline period
+  baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06']
+  complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
+  incomplete_baseline <- setdiff(unique(event_dt$location_id), complete_baseline)
+  if (length(incomplete_baseline) > 0) {
+    drop_log[[paste0(event, '__incomplete_baseline')]] <- data.table(
+      location_id = incomplete_baseline, event = event, reason = 'incomplete_baseline'
+    )
+  }
+  event_dt <- event_dt[! location_id %in% incomplete_baseline]
+  outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
+  
+  # Check for missing data in the analysis period
+  outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
+  if (mandate_num=='first'){
+    outcome_dt <- outcome_dt[date >= (onset_date - (max_train_wks * 7L)) &
+                               date < (onset_date + 7L)]
+    outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
+    
+    # Check if any locations having missing weeks (we expect exactly 9 weeks for first imposition)
+    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < 9]
+    # Check if any locations have missing days (each time_id should have 7 rows associated with it)
+    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+    # Combine
+    missing_mob <- unique(c(missing_weeks$location_id, missing_days$location_id))
+  } else{
+    outcome_dt[, start_date := {
+      base_date <- prev_lift + padding * 7L
+      onset_dow  <- wday(onset_date)
+      base_dow   <- wday(base_date)
+      days_to_add <- (onset_dow - base_dow) %% 7
+      base_date + days_to_add
+    }]
+    outcome_dt <- outcome_dt[date >= start_date & date < (onset_date + 7L)]
+    outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
+    
+    # Check if the onset date extends beyond the available data
+    onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]
+    # Check if any locations have missing days (each time_id should have 7 rows associated with it)
+    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+    # Combine
+    missing_mob <- unique(c(onset_after_data_ends$location_id, missing_days$location_id))
+  }
+  if (length(missing_mob) > 0) {
+    drop_log[[paste0(event, '__missing_mob')]] <- data.table(
+      location_id = missing_mob, event = event, reason = 'missing_mobility'
+    )
+  }
+  event_dt <- event_dt[! location_id %in% missing_mob]
 
+  
   # Add population category; log locations absent from pop_dt
   missing_pop <- setdiff(event_dt$location_id, pop_dt$location_id)
   if (length(missing_pop) > 0) {
