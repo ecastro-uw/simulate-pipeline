@@ -254,7 +254,7 @@ check_mandates <- function(context) {
   min_train_dt[, time_id := as.numeric(floor((date - onset_date) / 7))]
 
   col_names <- c('pct_edu', 'pct_gathering', 'pct_gym', 'pct_retail', 'pct_sah', 'pct_dining', 'pct_bar')
-  weekly_dt <- min_train_dt[, .(pct_edu       = sum(primary_edu) / 7,
+  weekly_dt <- min_train_dt[, .(pct_edu        = sum(primary_edu) / 7,
                                 pct_gathering  = sum(gatherings50i100o) / 7,
                                 pct_gym        = sum(gym_pool_leisure_close) / 7,
                                 pct_retail     = sum(non_essential_retail_close) / 7,
@@ -273,11 +273,13 @@ check_mandates <- function(context) {
 }
 
 mandate_covars <- rbindlist(lapply(unique(context_guide$context_id), check_mandates))
-mandate_covars <- merge(context_guide, mandate_covars, by = 'context_id')
 
 # Exclude same-type mandate as a covariate (avoid collinearity with the outcome)
 mandate_covars[grepl("restaurant", event), dining := '0']
 mandate_covars[grepl("bar",        event), bar    := '0']
+
+# Add to the context guide
+mandate_covars <- merge(context_guide, mandate_covars, by = 'context_id')
 
 
 # 3(B) Check if case and death data meet the covariate inclusion criteria for each context
@@ -314,16 +316,16 @@ context_lookup[, `:=`(
   model_1  = 1,                                                                          # random walk
   model_2  = 1,                                                                          # random walk with trend
   model_3  = 1,                                                                          # linear AR model
-  model_4  = ifelse(cases == 'X', 1, 0),                                                # AR + cases
-  model_5  = ifelse(cases == 'X' & deaths == 'X', 1, 0),                               # AR + cases + deaths
-  model_6  = ifelse(edu == 'X', 1, 0),                                                  # AR + schools
-  model_7  = ifelse(gathering == 'X', 1, 0),                                            # AR + gatherings
-  model_8  = ifelse(gym == 'X', 1, 0),                                                  # AR + gym
-  model_9  = ifelse(bar == 'X', 1, 0),                                                  # AR + bar
-  model_10 = ifelse(gathering == 'X' & bar == 'X', 1, 0),                              # AR + gatherings + bars
-  model_11 = ifelse(gathering == 'X' & edu == 'X', 1, 0),                              # AR + gatherings + schools
-  model_12 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X', 1, 0),                 # AR + gatherings + bars + schools
-  model_13 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X' & gym == 'X', 1, 0),   # AR + gatherings + bars + schools + gym
+  model_4  = ifelse(cases == 'X', 1, 0),                                                 # AR + cases
+  model_5  = ifelse(cases == 'X' & deaths == 'X', 1, 0),                                 # AR + cases + deaths
+  model_6  = ifelse(edu == 'X', 1, 0),                                                   # AR + schools
+  model_7  = ifelse(gathering == 'X', 1, 0),                                             # AR + gatherings
+  model_8  = ifelse(gym == 'X', 1, 0),                                                   # AR + gym
+  model_9  = ifelse(bar == 'X', 1, 0),                                                   # AR + bar
+  #model_10 = ifelse(gathering == 'X' & bar == 'X', 1, 0),                                # AR + gatherings + bars
+  #model_11 = ifelse(gathering == 'X' & edu == 'X', 1, 0),                                # AR + gatherings + schools
+  #model_12 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X', 1, 0),                   # AR + gatherings + bars + schools
+  #model_13 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X' & gym == 'X', 1, 0),      # AR + gatherings + bars + schools + gym
   model_14 = 1,                                                                          # ARIMA(1,1,0)
   model_15 = 1,                                                                          # auto.arima
   model_16 = 0,                                                                          # auto.arima + cases
