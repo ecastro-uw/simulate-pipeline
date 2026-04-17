@@ -102,19 +102,41 @@ adjust_UI <- function(data, results_draws, configs){
   }
 
   multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
-  
+
+  # Step 4b: Find second multiplier calibrated on time_id < -1
+  dt_summary2 <- results_draws[time_id < -1]
+  dt_summary2[, `:=`(mean = rowMeans(.SD),
+                     LL = apply(.SD, 1, quantile, 0.025),
+                     UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
+  dt_summary2 <- dt_summary2[, (draw_cols) := NULL]
+  multiplier2 <- bisect_for_coverage(dt_summary2, target_cov = 0.95)
+
   # Step 5: Apply the multiplier to each draw
   coverage_results <- calc_adj_coverage(M=multiplier, results_draws, by_draw=T)
   coverage_post <- coverage_results$coverage_post
-  
+
   # Step 6: Calculate p-value (what % of draws are less than or equal to the observed value?)
   draws_adj <- coverage_results$draws_adj
   draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
-  
-  
-  return(list(final_results = draws_adj, 
-              multiplier = multiplier, 
-              coverage_pre = coverage_pre, 
-              coverage_post = coverage_post))
+
+  # Step 6b: Apply multiplier2 to draws at time_id = -1, summarize to quantiles
+  dt_m1 <- results_draws[time_id == -1]
+  dt_m1[, mean := rowMeans(.SD), .SDcols = draw_cols]
+  draws_adj2 <- dt_m1[, lapply(.SD, function(x) mean + ((x - mean) * multiplier2)), .SDcols = draw_cols]
+  draws_adj2 <- cbind(dt_m1[, .(location_id, time_id)], draws_adj2)
+
+  pi_probs <- c(0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45,
+                0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.975)
+  pi_names <- paste0('q', pi_probs * 100)
+  quantile_dt <- as.data.table(t(apply(draws_adj2[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
+  setnames(quantile_dt, pi_names)
+  final_results2 <- cbind(draws_adj2[, .(location_id, time_id)], quantile_dt)
+
+  return(list(final_results = draws_adj,
+              multiplier = multiplier,
+              coverage_pre = coverage_pre,
+              coverage_post = coverage_post,
+              multiplier2 = multiplier2,
+              final_results2 = final_results2))
 }
 
