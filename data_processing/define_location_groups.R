@@ -23,7 +23,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1'     # For distinguishing output file names
+suffix    <- 'inv1_0417'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 padding   <-  2         # Weeks of data to discard after a mandate lifts
@@ -171,6 +171,7 @@ for (event in event_list) {
   if (mandate_num == 'first') {
     event_dt[, timing_cat := 'Mar-Apr 2020']
   } else if (event == 'second_restaurant') {
+    if(F){
     event_dt[, month := month(onset_date)]
     event_dt[, year  := year(onset_date)]
     event_dt[, timing_cat := ifelse(year == 2020 & month %in% 6:11, 'Jun-Nov 2020',
@@ -186,8 +187,11 @@ for (event in event_list) {
       event_dt <- event_dt[!is.na(timing_cat)]
     }
     event_dt[, c('month', 'year') := NULL]
+    }
+    event_dt[, timing_cat := "Jun-Dec 2020"]
   } else { # second bar mandates:
-    event_dt[, timing_cat := 'Jun 2020-May 2021']
+    #event_dt[, timing_cat := 'Jun 2020-May 2021']
+    event_dt[, timing_cat := 'Jun-Dec 2020']
   }
 
   # Collect relevant columns and append to all_contexts
@@ -206,7 +210,8 @@ if (length(drop_log) > 0) {
 }
 
 # Ensure proper sorting before assigning context ids
-all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Nov 2020', 'Dec 2020-May 2021', 'Jun 2020-May 2021'))]
+#all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Nov 2020', 'Dec 2020-May 2021', 'Jun 2020-May 2021'))]
+all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Dec 2020'))]
 all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar'))]
 all_contexts <- all_contexts[order(event, timing_cat, pop_cat, pol_cat)]
 
@@ -326,6 +331,10 @@ context_lookup[, `:=`(
   #model_11 = ifelse(gathering == 'X' & edu == 'X', 1, 0),                                # AR + gatherings + schools
   #model_12 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X', 1, 0),                   # AR + gatherings + bars + schools
   #model_13 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X' & gym == 'X', 1, 0),      # AR + gatherings + bars + schools + gym
+  model_10 = 0,
+  model_11 = 0,
+  model_12 = 0,
+  model_13 = 0,
   model_14 = 1,                                                                          # ARIMA(1,1,0)
   model_15 = 1,                                                                          # auto.arima
   model_16 = 0,                                                                          # auto.arima + cases

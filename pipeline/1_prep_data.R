@@ -44,11 +44,10 @@ prep_data <- function(pipeline_inputs){
     
     # Which data to grab?
     cat_name <- ifelse(mandate=='restaurant', 'Restaurants', 'Drinking')
-    var_name <- 'visits_per_10k'
     
     # Load the data
     outcome_dt <- fread(paste0(input_subdir,'/processed_safegraph_data.csv'))[location_id %in%
-                   location_list & top_category %like% cat_name, .(location_id, date, v = get(var_name))]
+                   location_list & top_category %like% cat_name, .(location_id, date, v = visit_count)]
     setorder(outcome_dt, location_id, date)
     
     # Calculate baseline for normalization (use same period as Google)
@@ -95,15 +94,17 @@ prep_data <- function(pipeline_inputs){
     if (imposition=='first'){
       # Check if any locations having missing weeks (we expect exactly 9 weeks for first imposition)
       missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
-      
       # Check if any locations have missing days (each time_id should have 7 rows associated with it)
       missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-      
+      # Combine
       missing_outcome_data <- unique(c(missing_weeks$location_id, missing_days$location_id))
     } else {
       # Check if the onset date extends beyond the available data
-      onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]$location_id
-      missing_outcome_data <- onset_after_data_ends
+      onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]
+      # Check if any locations have missing days (each time_id should have 7 rows associated with it)
+      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+      # Combine
+      missing_outcome_data <- unique(c(onset_after_data_ends$location_id, missing_days$location_id))
     }
     
     # Drop any locations with missing data during the study period
@@ -118,14 +119,8 @@ prep_data <- function(pipeline_inputs){
   problem_log <- data.table(location_id = missing_event_data,
                             reason = rep("Missing mandate data", length(missing_event_data))
                             )
-  if(imposition=='first'){
-    rows <- data.table(location_id = c(missing_days, missing_weeks),
-                       reason = c(rep("Missing days of mobility data", length(missing_days)),
-                                  rep("Missing weeks of mobility data"), length(missing_weeks)))
-  } else {
-    rows <- data.table(location_id = onset_after_data_ends,
-                       reason = rep("Mandate onset is after end of mobility data", length(onset_after_data_ends)))
-  }
+  rows <- data.table(location_id = missing_outcome_data,
+                     reason = rep("Missing mobility data", length(missing_outcome_data)))
   problem_log <- rbind(problem_log, rows)
   
   if(data_source=='safegraph'){
@@ -151,7 +146,7 @@ prep_data <- function(pipeline_inputs){
   # Check for missingness 
   covar_list <- c('primary_edu','gatherings50i100o','gym_pool_leisure_close',
                   'non_essential_retail_close', 'stay_at_home', 'dining_close', 'bar_close',
-                  'daily_cases', 'daily_deaths')
+                  'daily_cases', 'daily_deaths', 'pop')
   missing_covars <- data.table(location_id=integer(), covariate=character())
   for(covar in covar_list){
     temp <- data.table(location_id = unique(outcome_dt[is.na(get(covar)),location_id]),
@@ -185,9 +180,11 @@ prep_data <- function(pipeline_inputs){
   # Perform final processing in weekly space
   if(data_source=='safegraph'){
 
-    # Normalize by 2019 baseline then convert to log space
+    # Add baseline data
     weekly_dt <- merge(weekly_dt, baseline, by = 'location_id')
-    dt <- weekly_dt[, y := log(v / mean_base)] #TODO - how to handle instances when v=0? results in y=-Inf
+    
+    # Outcome measure is the log of normalized visit counts, with an offset to avoid log(0)
+    dt <- weekly_dt[, y := log((v + 0.5) / mean_base)]
     
     dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
                  pct_edu, pct_gathering, pct_gym, pct_retail,
