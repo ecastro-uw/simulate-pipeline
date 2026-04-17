@@ -202,12 +202,6 @@ for (event in event_list) {
   all_contexts       <- rbind(all_contexts, context_map, fill = TRUE)
 }
 
-# Write drop log
-if (length(drop_log) > 0) {
-  drop_log_dt <- rbindlist(drop_log)
-  fwrite(drop_log_dt, paste0(out_dir, 'dropped_locations_', suffix, '.csv'))
-  message(sprintf('%d location-event pair(s) dropped during QC. See dropped_locations_%s.csv.', nrow(drop_log_dt), suffix))
-}
 
 # Ensure proper sorting before assigning context ids
 #all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Nov 2020', 'Dec 2020-May 2021', 'Jun 2020-May 2021'))]
@@ -314,6 +308,48 @@ check_cases_deaths <- function(context) {
 
 epi_covars     <- rbindlist(lapply(unique(context_guide$context_id), check_cases_deaths))
 context_lookup <- merge(mandate_covars, epi_covars, by = 'context_id')
+
+# 3(B continued) Log locations with missing cases or deaths data
+for (event_name in event_list) {
+  one_event   <- all_contexts[event == event_name]
+  mandate_num <- ifelse(substr(event_name, 1, 5) == 'first', 'first', 'second')
+  one_event_w <- add_train_window(copy(one_event), mandate_num)
+
+  # Locations absent from cases_dt entirely
+  absent <- setdiff(one_event_w$location_id, cases_dt$location_id)
+  if (length(absent) > 0) {
+    drop_log[[paste0(event_name, '__missing_cases_deaths')]] <- data.table(
+      location_id = absent, event = event_name, reason = 'missing_cases_deaths_data'
+    )
+  }
+
+  # For present locations, check for all-NA within the training window
+  present_dt <- merge(cases_dt,
+                      one_event_w[!location_id %in% absent, .(location_id, start_date, end_date)],
+                      by = 'location_id')
+  present_dt <- present_dt[date >= start_date & date <= end_date]
+
+  na_cases  <- present_dt[, all(is.na(daily_cases)),  by = location_id][V1 == TRUE, location_id]
+  na_deaths <- present_dt[, all(is.na(daily_deaths)), by = location_id][V1 == TRUE, location_id]
+
+  if (length(na_cases) > 0) {
+    drop_log[[paste0(event_name, '__na_cases')]] <- data.table(
+      location_id = na_cases, event = event_name, reason = 'missing_cases'
+    )
+  }
+  if (length(na_deaths) > 0) {
+    drop_log[[paste0(event_name, '__na_deaths')]] <- data.table(
+      location_id = na_deaths, event = event_name, reason = 'missing_deaths'
+    )
+  }
+}
+
+# Write drop log
+if (length(drop_log) > 0) {
+  drop_log_dt <- rbindlist(drop_log)
+  fwrite(drop_log_dt, paste0(out_dir, 'dropped_locations_', suffix, '.csv'))
+  message(sprintf('%d location-event pair(s) dropped during QC. See dropped_locations_%s.csv.', nrow(drop_log_dt), suffix))
+}
 
 
 # 3(C) Resolve which models to run for each context
