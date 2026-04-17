@@ -50,6 +50,9 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   ## PREP RESULTS FOR OUTPUT
   draw_cols <- paste0('draw_', 1:configs$d)
+  pi_probs <- c(0.01, 0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45,
+                0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.975, 0.99)
+  pi_names <- paste0('q', pi_probs * 100)
   
   # (1) Observations
   # data
@@ -58,11 +61,10 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   if(configs$save_candidate_draws==T){
     candidate_mod_output <- preds_by_model[, .SD, .SDcols = c('model','location_id', 'time_id', draw_cols)]
   } else {
-    candidate_mod_output <- preds_by_model[, `:=` (q2.5 = apply(.SD, 1, quantile, 0.025),
-                                                   q50 = apply(.SD, 1, quantile, 0.50),
-                                                   q97.5 = apply(.SD, 1, quantile, 0.975),
-                                                   mean = apply(.SD, 1, mean)),
-                                           .SDcols = draw_cols][,.(model, location_id, time_id, q2.5, q50, q97.5, mean)]
+    quantile_dt <- as.data.table(t(apply(preds_by_model[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
+    setnames(quantile_dt, pi_names)
+    quantile_dt[, mean := preds_by_model[, rowMeans(.SD), .SDcols = draw_cols]]
+    candidate_mod_output <- cbind(preds_by_model[, .(model, location_id, time_id)], quantile_dt)
   }
   
   # (3) Pre-adjustment ensemble estimates
@@ -84,21 +86,17 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   } else {
     if(configs$save_all_pre_adj_time_steps==T){
       # save out summary stats, all time steps
-      pre_adj_output <- unadj_results[, `:=` (q1 = apply(.SD, 1, quantile, 0.01),
-                                              q2.5 = apply(.SD, 1, quantile, 0.025),
-                                              q50 = apply(.SD, 1, quantile, 0.50),
-                                              mean = apply(.SD, 1, mean),
-                                              q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, p_val, q1, q2.5, q50, mean, q97.5)]
+      quantile_dt <- as.data.table(t(apply(unadj_results[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
+      setnames(quantile_dt, pi_names)
+      quantile_dt[, mean := unadj_results[, rowMeans(.SD), .SDcols = draw_cols]]
+      pre_adj_output <- cbind(unadj_results[, .(location_id, time_id, p_val)], quantile_dt)
     } else {
       # save out summary stats, only time step of interest
-      pre_adj_output <- unadj_results[time_id==forecast_target][,
-                                      `:=` (q1 = apply(.SD, 1, quantile, 0.01),
-                                            q2.5 = apply(.SD, 1, quantile, 0.025),
-                                            q50 = apply(.SD, 1, quantile, 0.50),
-                                            mean = apply(.SD, 1, mean),
-                                            q97.5 = apply(.SD, 1, quantile, 0.975)),
-                                      .SDcols = draw_cols][,.(location_id, time_id, p_val, q1, q2.5, q50, mean, q97.5)]
+      tmp <- unadj_results[time_id==forecast_target]
+      quantile_dt <- as.data.table(t(apply(tmp[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
+      setnames(quantile_dt, pi_names)
+      quantile_dt[, mean := tmp[, rowMeans(.SD), .SDcols = draw_cols]]
+      pre_adj_output <- cbind(tmp[, .(location_id, time_id, p_val)], quantile_dt)
     }
   }
   
