@@ -43,8 +43,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   adjust_start <- Sys.time()
   adjusted_results <- adjust_UI(data, unadj_results, configs)
   final_results <- adjusted_results$final_results
-  multiplier2 <- adjusted_results$multiplier2
-  final_results2 <- adjusted_results$final_results2
+  wis_results <- adjusted_results$final_results2
   adjust_end <- Sys.time()
   adjust_time <- adjust_end - adjust_start
   
@@ -103,16 +102,15 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
     }
   }
   
-  # (4) Pre-adjustment coverage rate
+  # (4) & (5) Pre- and post-adjustment coverage rate
   coverage_pre <- adjusted_results$coverage_pre
-  
-  # (5) Post-adjustment coverage rate
   coverage_post <- adjusted_results$coverage_post
   
-  # (6) Multipliers
-  multiplier <- adjusted_results$multiplier
+  # (6) & (7) Multipliers
+  multiplier <- adjusted_results$multiplier   #final multiplier (t<0)
+  multiplier2 <- adjusted_results$multiplier2 #multiplier for WIS (t<-1)
 
-  # (7) Adjusted forecasts
+  # (8) Adjusted forecasts
   if(configs$save_draws==T){
     if(configs$save_all_time_steps==T){ 
       # save out draws, all time steps
@@ -143,13 +141,17 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
     }
   }
   
-  # (8) Ensemble weights
-  # weights_dt
+  # (9) Adjusted forecasts for WIS (t=-1)
+  #wis_results
   
-  # (9) Sigmas
+  # (10) & (11) Ensemble weights and fit statistics
+  # weights_dt
+  # fit_stats_dt
+  
+  # (12) Sigmas
   # sigmas_dt
   
-  # (10) Time stamps
+  # (13) Time stamps
   time_stamps <- c(data_time = data_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
   return(list(obs_dt = data,
@@ -160,7 +162,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
               multiplier = multiplier,
               multiplier2 = multiplier2,
               results_output = results_output,
-              results_output2 = final_results2,
+              wis_results = wis_results,
               weights_dt = weights_dt,
               fit_stats_dt = fit_stats_dt,
               sigmas_dt = sigmas_dt,

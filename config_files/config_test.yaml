@@ -9,6 +9,6 @@ seed: 1030
 save_draws?: no
 save_all_time_steps?: yes
 save_pre_adj_draws?: no
-save_all_pre_adj_time_steps?: no
+save_all_pre_adj_time_steps?: yes
 save_candidate_draws?: no
 ...
