@@ -36,7 +36,7 @@ out_dir    <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
 pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
 min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
-pre_onset_wks    <- 8       # Weeks of pre-onset history included in the training window
+max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
 min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
 min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
 mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
@@ -116,7 +116,7 @@ for (event in event_list) {
       event_dt <- event_dt[!is.na(timing_cat)]
     }
     event_dt[, c('month', 'year') := NULL]
-  } else {
+  } else { # second bar mandates:
     event_dt[, timing_cat := 'Jun 2020-May 2021']
   }
 
@@ -159,7 +159,7 @@ context_guide[, outcome := paste0('visits to ', mandate_type, 's')]
 # Helper: add per-location training window dates to a context subset (modifies in place)
 add_train_window <- function(dt, mandate_num) {
   if (mandate_num == 'first') {
-    dt[, start_date := onset_date - pre_onset_wks * 7L]
+    dt[, start_date := onset_date - max_train_wks * 7L]
     dt[, end_date   := start_date + min_train_wks * 7L - 1L]
   } else {
     dt[, max_train_length := int_wks - padding]
