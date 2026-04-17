@@ -84,7 +84,7 @@ for (event in event_list) {
   
   # Load mobility data
   cat_name <- ifelse(grepl('restaurant', event), 'Restaurants', 'Drinking')
-  outcome_dt <- fread(paste0(input_root,'/processed_safegraph_data.csv'))[top_category %like% cat_name, .(location_id, date, v = visits_per_10k)]
+  outcome_dt <- fread(paste0(input_root,'/processed_safegraph_data.csv'))[top_category %like% cat_name, .(location_id, date, v = visit_count)]
   outcome_dt <- outcome_dt[! is.na(v)]
   setorder(outcome_dt, location_id, date)
   
