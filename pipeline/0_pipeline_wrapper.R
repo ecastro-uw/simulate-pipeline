@@ -70,7 +70,8 @@ result <- pipeline(pipeline_inputs)
 coverage_dt <- data.table(
   coverage_pre = result$coverage_pre,
   coverage_post = result$coverage_post,
-  multiplier = result$multiplier
+  multiplier = result$multiplier,
+  multiplier2 = result$multiplier2
 )
 
 # SAVE TO DISK
@@ -79,6 +80,7 @@ fwrite(result$obs_dt,               paste0(out_dir,'/batched_output/obs_',      
 fwrite(result$candidate_mod_output, paste0(out_dir,'/batched_output/candidate_mods_',suffix,'.csv'))
 fwrite(result$pre_adj_output,       paste0(out_dir,'/batched_output/pred_pre_',      suffix,'.csv'))
 fwrite(result$results_output,       paste0(out_dir,'/batched_output/pred_adj_',      suffix,'.csv'))
+fwrite(result$results_output2,      paste0(out_dir,'/batched_output/pred_adj2_',     suffix,'.csv'))
 fwrite(result$weights_dt,           paste0(out_dir,'/batched_output/ens_weights_',    suffix,'.csv'))
 fwrite(result$fit_stats_dt,         paste0(out_dir,'/batched_output/ens_fit_stats_',  suffix,'.csv'))
 fwrite(result$sigmas_dt,            paste0(out_dir,'/batched_output/sigmas_',         suffix,'.csv'))

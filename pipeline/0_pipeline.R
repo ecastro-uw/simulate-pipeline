@@ -43,6 +43,8 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   adjust_start <- Sys.time()
   adjusted_results <- adjust_UI(data, unadj_results, configs)
   final_results <- adjusted_results$final_results
+  multiplier2 <- adjusted_results$multiplier2
+  final_results2 <- adjusted_results$final_results2
   adjust_end <- Sys.time()
   adjust_time <- adjust_end - adjust_start
   
@@ -107,7 +109,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   # (5) Post-adjustment coverage rate
   coverage_post <- adjusted_results$coverage_post
   
-  # (6) Multiplier
+  # (6) Multipliers
   multiplier <- adjusted_results$multiplier
 
   # (7) Adjusted forecasts
@@ -156,7 +158,9 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
               coverage_pre = coverage_pre,
               coverage_post = coverage_post,
               multiplier = multiplier,
+              multiplier2 = multiplier2,
               results_output = results_output,
+              results_output2 = final_results2,
               weights_dt = weights_dt,
               fit_stats_dt = fit_stats_dt,
               sigmas_dt = sigmas_dt,
