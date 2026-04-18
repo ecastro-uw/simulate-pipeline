@@ -1,56 +1,49 @@
-# Model 12: Linear Auto-Regressive Model 
-# Covariates: Gathering restrictions, School closures, Bar closures
-# Note: Currently only supports w=1 (hard coded)
+# Model 12: auto.arima 
+# Covariates: None
 
-model_12 <- function(dataset, w, d){
-  
-  # Make a copy so the original stays unchanged
+model_12 <- function(dataset, w, d) {
+ 
   dt <- copy(dataset)
   
-  # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
+  locations <- unique(dt$location_id)
+  results_list <- vector("list", length(locations))
   
-  # Lag gathering restrictions to use as a predictor
-  dt[, lagged_gathering := shift(pct_gathering), by=location_id]
+  for (i in seq_along(locations)) {
+    loc      <- locations[i]
+    loc_data <- dt[location_id == loc]
+    setorder(loc_data, time_id)
+    
+    data_ts <- ts(loc_data$y)
+    
+    tmp_model <- auto.arima(data_ts)
+    
+    # Generate d simulation draws for the w-week-ahead forecast.
+    # Each simulate() call draws one stochastic path; we keep only step w.
+    draws <- sapply(seq_len(d), function(x) {
+      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+      sim[w]
+    })
+    
+    # Compute sigma as RMSE of in-sample residuals
+    resids <- residuals(tmp_model)
+    sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
+    
+    draws_dt <- as.data.table(t(draws))
+    setnames(draws_dt, paste0("draw_", seq_len(d)))
+    
+    ids <- data.table(
+      model       = "model_12",
+      location_id = loc,
+      time_id     = max(loc_data$time_id) + w,
+      sigma       = sigma
+      #p           = arimaorder(tmp_model)[1],
+      #d           = arimaorder(tmp_model)[2],
+      #q           = arimaorder(tmp_model)[3]
+    )
+    results_list[[i]] <- cbind(ids, draws_dt)
+  }
   
-  # Lag school closures to use as a predictor
-  dt[, lagged_edu := shift(pct_edu), by=location_id]
+  return(rbindlist(results_list))
   
-  # Lag bar closures to use as a predictor
-  dt[, lagged_bar := shift(pct_bar), by=location_id]
-  
-  # Fit the model
-  fit <- lm(y ~ lagged_y + lagged_gathering + lagged_edu + lagged_bar, data = dt)
-  
-  # Get draws of the regression coefs 
-  beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
-  
-  # Generate data file for 1-week ahead predictions
-  last_time_step <- max(dt$time_id)
-  new_dt <- dt[time_id==last_time_step, .(location_id, time_id, y, pct_gathering, pct_edu, pct_bar)]
-  new_dt$time_id <- last_time_step + 1
-  setnames(new_dt, c('y', 'pct_gathering', 'pct_edu', 'pct_bar'),
-           c('lagged_y', 'lagged_gathering', 'lagged_edu', 'lagged_bar'))
-  
-  # Construct a matrix with new data values
-  X_new <- model.matrix(~lagged_y + lagged_gathering + lagged_edu + lagged_bar, data=new_dt)
-  
-  # Compute draws of the fitted values
-  fitted_draws <- beta_draws %*% t(X_new)
-  
-  # Add residual noise
-  sigma_hat <- sigma(fit)
-  noise <- matrix(rnorm(d * nrow(new_dt), mean = 0, sd = sigma_hat),
-                  nrow = d, ncol = nrow(new_dt))
-  
-  # Get the final draws
-  predictive_draws <- t(fitted_draws + noise)
-  draws_dt <- as.data.table(predictive_draws)
-  setnames(draws_dt, paste0("draw_", 1:d))
-  
-  # Organize the results
-  ids <- data.table(model="model_12", location_id = new_dt$location_id, time_id = new_dt$time_id, sigma = sigma_hat)
-  draws_dt <- cbind(ids,draws_dt)
-  
-  return(draws_dt)
-}
+   
+}  

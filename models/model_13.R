@@ -1,54 +1,69 @@
-# Model 13: Linear Auto-Regressive Model 
-# Covariates: Gathering restrictions, School closures, Bar closures, Gym closures
-# Note: Currently only supports w=1 (hard coded)
+# Model 13: auto.arima
+# Covariates: cases_lag2_sum (sum of cases_pc over previous 2 weeks)
 
-model_13 <- function(dataset, w, d){
-  
-  # Make a copy so the original stays unchanged
+model_13 <- function(dataset, w, d) {
+
   dt <- copy(dataset)
-  
-  # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
-  
-  # Lag the mandate variables to use as predictors
-  dt[, `:=` (lagged_gathering = shift(pct_gathering),
-             lagged_edu = shift(pct_edu),
-             lagged_bar = shift(pct_bar),
-             lagged_gym = shift(pct_gym)),
-     by=location_id]
-  
-  # Fit the model
-  fit <- lm(y ~ lagged_y + lagged_gathering + lagged_edu + lagged_bar + lagged_gym, data = dt)
-  
-  # Get draws of the regression coefs 
-  beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
-  
-  # Generate data file for 1-week ahead predictions
-  last_time_step <- max(dt$time_id)
-  new_dt <- dt[time_id==last_time_step, .(location_id, time_id, y, pct_gathering, pct_edu, pct_bar, pct_gym)]
-  new_dt$time_id <- last_time_step + 1
-  setnames(new_dt, c('y', 'pct_gathering', 'pct_edu', 'pct_bar', 'pct_gym'),
-           c('lagged_y', 'lagged_gathering', 'lagged_edu', 'lagged_bar', 'lagged_gym'))
-  
-  # Construct a matrix with new data values
-  X_new <- model.matrix(~lagged_y + lagged_gathering + lagged_edu + lagged_bar + lagged_gym, data=new_dt)
-  
-  # Compute draws of the fitted values
-  fitted_draws <- beta_draws %*% t(X_new)
-  
-  # Add residual noise
-  sigma_hat <- sigma(fit)
-  noise <- matrix(rnorm(d * nrow(new_dt), mean = 0, sd = sigma_hat),
-                  nrow = d, ncol = nrow(new_dt))
-  
-  # Get the final draws
-  predictive_draws <- t(fitted_draws + noise)
-  draws_dt <- as.data.table(predictive_draws)
-  setnames(draws_dt, paste0("draw_", 1:d))
-  
-  # Organize the results
-  ids <- data.table(model="model_13", location_id = new_dt$location_id, time_id = new_dt$time_id, sigma = sigma_hat)
-  draws_dt <- cbind(ids,draws_dt)
-  
-  return(draws_dt)
+  setorder(dt, location_id, time_id)
+
+  # Compute cases_lag2_sum: cases_pc[t-1] + cases_pc[t-2]
+  dt[, cases_lag2_sum := frollsum(shift(cases_pc, 1), n = 2, align = "right"), by = location_id]
+
+  locations    <- unique(dt$location_id)
+  results_list <- vector("list", length(locations))
+
+  for (i in seq_along(locations)) {
+    loc      <- locations[i]
+    loc_data <- dt[location_id == loc]
+    setorder(loc_data, time_id)
+
+    n              <- nrow(loc_data)
+    cases_observed <- loc_data$cases_pc
+
+    # Remove rows where cases_lag2_sum is NA (first 2 rows due to lagging)
+    loc_data_complete <- loc_data[!is.na(cases_lag2_sum)]
+
+    data_ts    <- ts(loc_data_complete$y)
+    xreg_train <- matrix(loc_data_complete$cases_lag2_sum, ncol = 1,
+                         dimnames = list(NULL, "cases_lag2_sum"))
+
+    tmp_model <- auto.arima(data_ts, xreg = xreg_train)
+
+    # Build future xreg for the w forecast steps.
+    # cases_lag2_sum at horizon s = cases_pc[n+s-1] + cases_pc[n+s-2].
+    # When an index exceeds n, use persistence (last observed value).
+    xreg_future <- matrix(NA_real_, nrow = w, ncol = 1,
+                          dimnames = list(NULL, "cases_lag2_sum"))
+    for (s in seq_len(w)) {
+      idx1 <- n + s - 1
+      idx2 <- n + s - 2
+      val1 <- if (idx1 <= n) cases_observed[idx1] else cases_observed[n]
+      val2 <- if (idx2 <= n) cases_observed[idx2] else cases_observed[n]
+      xreg_future[s, 1] <- val1 + val2
+    }
+
+    # Generate d simulation draws for the w-week-ahead forecast.
+    # Each simulate() call draws one stochastic path; we keep only step w.
+    draws <- sapply(seq_len(d), function(x) {
+      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w, xreg = xreg_future))
+      sim[w]
+    })
+
+    # Compute sigma as RMSE of in-sample residuals
+    resids <- residuals(tmp_model)
+    sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
+
+    draws_dt <- as.data.table(t(draws))
+    setnames(draws_dt, paste0("draw_", seq_len(d)))
+
+    ids <- data.table(
+      model       = "model_13",
+      location_id = loc,
+      time_id     = max(loc_data$time_id) + w,
+      sigma       = sigma
+    )
+    results_list[[i]] <- cbind(ids, draws_dt)
+  }
+
+  return(rbindlist(results_list))
 }

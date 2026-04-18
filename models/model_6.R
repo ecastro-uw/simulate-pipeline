@@ -1,32 +1,45 @@
 # Model 6: Linear Auto-Regressive Model 
-# Covariates: Primary school closure
+# Covariates: Cases & Deaths (total reported per 10K pop over last 2 weeks)
 # Note: Currently only supports w=1 (hard coded)
 
 model_6 <- function(dataset, w, d){
   
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)
+  setorder(dt, location_id, time_id)
   
   # Lag the dependent variable to use as a predictor
   dt[, lagged_y := shift(y), by=location_id]
   
-  # Lag school closures to use as a predictor
-  dt[, lagged_edu := shift(pct_edu), by=location_id]
+  # Calculate sum of cases over the previous 2 weeks (excluding current week)
+  dt[, cases_lag2_sum := frollsum(shift(cases_pc, 1), n = 2, align = "right"), by = location_id]
+  
+  # Calculate sum of deaths over the previous 2 weeks (excluding current week)
+  dt[, deaths_lag2_sum := frollsum(shift(deaths_pc, 1), n = 2, align = "right"), by = location_id]
   
   # Fit the model
-  fit <- lm(y ~ lagged_y + lagged_edu, data = dt)
+  fit <- lm(y ~ lagged_y + cases_lag2_sum + deaths_lag2_sum, data = dt)
   
   # Get draws of the regression coefs 
   beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
   
   # Generate data file for 1-week ahead predictions
   last_time_step <- max(dt$time_id)
-  new_dt <- dt[time_id==last_time_step, .(location_id, time_id, y, pct_edu)]
-  new_dt$time_id <- last_time_step + 1
-  setnames(new_dt, c('y', 'pct_edu'), c('lagged_y', 'lagged_edu'))
+  
+  # Grab the last 2 time steps to reconstruct the rolling sum for the forecast row
+  last_two <- dt[time_id %in% c(last_time_step - 1, last_time_step), 
+                 .(location_id, time_id, y, cases_pc, deaths_pc)]
+  
+  # Forecast row
+  new_dt <- last_two[, .(
+    time_id         = last_time_step + 1,
+    lagged_y        = y[time_id == last_time_step],
+    cases_lag2_sum  = sum(cases_pc),
+    deaths_lag2_sum = sum(deaths_pc)
+  ), by = location_id]
   
   # Construct a matrix with new data values
-  X_new <- model.matrix(~lagged_y + lagged_edu, data=new_dt)
+  X_new <- model.matrix(~lagged_y + cases_lag2_sum + deaths_lag2_sum, data=new_dt)
   
   # Compute draws of the fitted values
   fitted_draws <- beta_draws %*% t(X_new)
@@ -40,7 +53,11 @@ model_6 <- function(dataset, w, d){
   predictive_draws <- t(fitted_draws + noise)
   draws_dt <- as.data.table(predictive_draws)
   setnames(draws_dt, paste0("draw_", 1:d))
-
+  
+  # Check against predict()
+  #predictions <- predict(fit, new_dt, interval="prediction")
+  #apply(predictive_draws, 1, quantile, probs = c(0.025, 0.975))
+  
   # Organize the results
   ids <- data.table(model="model_6", location_id = new_dt$location_id, time_id = new_dt$time_id, sigma = sigma_hat)
   draws_dt <- cbind(ids,draws_dt)

@@ -1,13 +1,13 @@
-# Model 16: auto.arima
-# Covariates: Primary school closure (% of days in effect during the previous week)
+# Model 17: auto.arima
+# Covariates: Gathering restrictions (% of days in effect during the previous week)
 
-model_16 <- function(dataset, w, d) {
+model_17 <- function(dataset, w, d) {
   
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
   
-  # Lag school closures
-  dt[, lagged_edu := shift(pct_edu), by=location_id]
+  # Lag gathering restrictions
+  dt[, lagged_gathering := shift(pct_gathering), by=location_id]
   
   locations    <- unique(dt$location_id)
   results_list <- vector("list", length(locations))
@@ -18,26 +18,26 @@ model_16 <- function(dataset, w, d) {
     setorder(loc_data, time_id)
     
     n              <- nrow(loc_data)
-    edu_observed <- loc_data$pct_edu
+    gathering_observed <- loc_data$pct_gathering
     
-    # Remove rows where lagged_edu is NA (first row due to lagging)
-    loc_data_complete <- loc_data[!is.na(lagged_edu)]
+    # Remove rows where lagged_gathering is NA (first row due to lagging)
+    loc_data_complete <- loc_data[!is.na(lagged_gathering)]
     
     data_ts    <- ts(loc_data_complete$y)
     
-    if (sum(loc_data_complete$lagged_edu)>0) {
+    if (sum(loc_data_complete$lagged_gathering)>0) {
       # If the covariate data are not all 0s, fit with external regressors
-      xreg_train <- matrix(loc_data_complete$lagged_edu, ncol = 1,
-                           dimnames = list(NULL, "lagged_edu"))
+      xreg_train <- matrix(loc_data_complete$lagged_gathering, ncol = 1,
+                           dimnames = list(NULL, "lagged_gathering"))
       tmp_model <- auto.arima(data_ts, xreg = xreg_train)
-
+      
       # Build future xreg for the w forecast steps.
       # When an index exceeds n, use persistence (last observed value).
       xreg_future <- matrix(NA_real_, nrow = w, ncol = 1,
-                            dimnames = list(NULL, "lagged_edu"))
+                            dimnames = list(NULL, "lagged_gathering"))
       for (s in seq_len(w)) {
         idx1 <- n + s - 1
-        val1 <- if (idx1 <= n) edu_observed[idx1] else edu_observed[n]
+        val1 <- if (idx1 <= n) gathering_observed[idx1] else gathering_observed[n]
         xreg_future[s, 1] <- val1
       }
       
@@ -67,7 +67,7 @@ model_16 <- function(dataset, w, d) {
     setnames(draws_dt, paste0("draw_", seq_len(d)))
     
     ids <- data.table(
-      model       = "model_16",
+      model       = "model_17",
       location_id = loc,
       time_id     = max(loc_data$time_id) + w,
       sigma       = sigma

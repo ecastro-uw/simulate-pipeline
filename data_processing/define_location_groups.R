@@ -357,26 +357,23 @@ context_lookup[, `:=`(
   model_2  = 1,                                                                     # random walk with trend
   model_3  = 1,                                                                     # linear AR model
   model_4  = ifelse(cases == 1, 1, 0),                                              # AR + cases
-  model_5  = ifelse(cases == 1 & deaths == 1, 1, 0),                                     # AR + cases + deaths
-  model_6  = ifelse(edu == 1, 1, 0),                                                   # AR + schools
-  model_7  = ifelse(gathering == 1, 1, 0),                                             # AR + gatherings
-  model_8  = ifelse(gym == 1, 1, 0),                                                   # AR + gym
-  model_9  = ifelse(bar == 1, 1, 0),                                                   # AR + bar
-  #model_10 = ifelse(gathering == 1 & bar == 1, 1, 0),                                # AR + gatherings + bars
-  #model_11 = ifelse(gathering == 1 & edu == 1, 1, 0),                                # AR + gatherings + schools
-  #model_12 = ifelse(gathering == 1 & bar == 1 & edu == 1, 1, 0),                   # AR + gatherings + bars + schools
-  #model_13 = ifelse(gathering == 1 & bar == 1 & edu == 1 & gym == 1, 1, 0),      # AR + gatherings + bars + schools + gym
-  model_10 = 0,
-  model_11 = 0,
-  model_12 = 0,
-  model_13 = 0,
-  model_14 = 1,                                                                          # ARIMA(1,1,0)
-  model_15 = 1,                                                                          # auto.arima
-  model_16 = 0,                                                                          # auto.arima + cases
-  model_17 = 0,                                                                          # auto.arima + mandate propensity
-  model_18 = 0,                                                                          # auto.arima + cases + deaths
-  model_19 = 0,                                                                          # auto.arima + cases + deaths + mandate propensity
-  model_20 = 0                                                                           # neural network
+  model_5  = ifelse(deaths == 1, 1, 0),                                             # AR + deaths
+  model_6  = ifelse(cases == 1 & deaths == 1, 1, 0),                                # AR + cases + deaths
+  model_7  = ifelse(edu == 1, 1, 0),                                                # AR + schools
+  model_8  = ifelse(gathering == 1, 1, 0),                                          # AR + gatherings
+  model_9  = ifelse(gym == 1, 1, 0),                                                # AR + gym
+  model_10  = ifelse(bar == 1, 1, 0),                                               # AR + bar
+  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # AR + sum of mandates
+  model_12 = 1,                                                                     # auto.arima
+  model_13 = ifelse(cases == 1, 1, 0),                                              # auto.arima + cases
+  model_14 = ifelse(deaths == 1, 1, 0),                                             # auto.arima + deaths
+  model_15 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # auto.arima + cases + deaths
+  model_16 = ifelse(edu == 1, 1, 0),                                                # auto.arima + schools
+  model_17 = ifelse(gathering == 1, 1, 0),                                          # auto.arima + gatherings
+  model_18 = ifelse(gym == 1, 1, 0),                                                # auto.arima + gym
+  model_19 = ifelse(bar == 1, 1, 0),                                                # auto.arima + bar
+  model_20 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # auto.arima + sum of mandates
+  model_21 = 0                                                                      # neural network
 )]
 
 

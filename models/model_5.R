@@ -6,6 +6,7 @@ model_5 <- function(dataset, w, d){
   
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)
+  setorder(dt, location_id, time_id)
   
   # Lag the dependent variable to use as a predictor
   dt[, lagged_y := shift(y), by=location_id]

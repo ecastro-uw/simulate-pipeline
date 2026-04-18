@@ -1,5 +1,5 @@
 # Model 11: Linear Auto-Regressive Model 
-# Covariates: Gathering restrictions, School closures
+# Covariates: Sum of mandates (edu + gather + gym + bar)
 # Note: Currently only supports w=1 (hard coded)
 
 model_11 <- function(dataset, w, d){
@@ -10,26 +10,24 @@ model_11 <- function(dataset, w, d){
   # Lag the dependent variable to use as a predictor
   dt[, lagged_y := shift(y), by=location_id]
   
-  # Lag gathering restrictions to use as a predictor
-  dt[, lagged_gathering := shift(pct_gathering), by=location_id]
-  
-  # Lag school closures to use as a predictor
-  dt[, lagged_edu := shift(pct_edu), by=location_id]
+  # Calculate lagged composite mandate score
+  dt[, mandate_tot := pct_edu + pct_gathering + pct_gym + pct_bar]
+  dt[, lagged_mandate_tot := shift(mandate_tot), by=location_id]
   
   # Fit the model
-  fit <- lm(y ~ lagged_y + lagged_gathering + lagged_edu, data = dt)
+  fit <- lm(y ~ lagged_y + lagged_mandate_tot, data = dt)
   
   # Get draws of the regression coefs 
   beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
   
   # Generate data file for 1-week ahead predictions
   last_time_step <- max(dt$time_id)
-  new_dt <- dt[time_id==last_time_step, .(location_id, time_id, y, pct_gathering, pct_edu)]
+  new_dt <- dt[time_id==last_time_step, .(location_id, time_id, y, mandate_tot)]
   new_dt$time_id <- last_time_step + 1
-  setnames(new_dt, c('y', 'pct_gathering', 'pct_edu'), c('lagged_y', 'lagged_gathering', 'lagged_edu'))
+  setnames(new_dt, c('y', 'mandate_tot'), c('lagged_y', 'lagged_mandate_tot'))
   
   # Construct a matrix with new data values
-  X_new <- model.matrix(~lagged_y + lagged_gathering + lagged_edu, data=new_dt)
+  X_new <- model.matrix(~lagged_y + lagged_mandate_tot, data=new_dt)
   
   # Compute draws of the fitted values
   fitted_draws <- beta_draws %*% t(X_new)
