@@ -22,7 +22,7 @@ dir <- "/mnt/share/homes/ems2285/lib_for_scoringutils"
 # attempt to install the package
 install.packages('scoringutils', 
                  lib=dir, 
-                 dependencies=T
+                 dependencies=T)
 
 
 install.packages("rlang", lib = dir)                    # this version needs to be correct for scoringutils to work correctly when called

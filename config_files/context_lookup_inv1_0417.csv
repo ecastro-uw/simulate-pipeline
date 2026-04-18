@@ -4,7 +4,7 @@ context_id,country,ADMN,mandate_type,mandate_num,timing_cat,outcome,pop_cat,pol_
 3,USA,2,restaurant,first,Mar-Apr 2020,visits to restaurants,big,R,238,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
 4,USA,2,restaurant,first,Mar-Apr 2020,visits to restaurants,small,D,142,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
 5,USA,2,restaurant,first,Mar-Apr 2020,visits to restaurants,small,M,228,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
-6,USA,2,restaurant,first,Mar-Apr 2020,visits to restaurants,small,R,2017,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0
+6,USA,2,restaurant,first,Mar-Apr 2020,visits to restaurants,small,R,2017,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 7,USA,2,restaurant,second,Jun-Dec 2020,visits to restaurants,big,D,32,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,0,0,0,0,0
 8,USA,2,restaurant,second,Jun-Dec 2020,visits to restaurants,big,M,43,1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,0,0,0,0,0
 9,USA,2,restaurant,second,Jun-Dec 2020,visits to restaurants,big,R,33,1,1,1,1,1,0,1,1,0,0,0,0,0,1,1,0,0,0,0,0

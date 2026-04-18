@@ -9,19 +9,14 @@
 #     of seeing as many or more locations reject the null assuming each location was no more likely than 
 #     chance alone to reject.
 
-#.libPaths(c("/ihme/homes/ems2285/rpackages/", .libPaths()))
-install.packages('scoringutils',
-                 lib='/ihme/homes/ems2285/rpackages/')
 
-#remotes::install_github("cmu-delphi/covidcast", ref = "main",
-#                        subdir = "R-packages/evalcast")
-
+library(scoringutils, lib.loc = '/ihme/homes/ems2285/lib_for_scoringutils')
 library(data.table)
 library(ggplot2)
 library(dplyr)
 
 # args
-version_id <- '20260412.02'
+version_id <- '20260417.03'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs/',version_id)
@@ -31,44 +26,67 @@ context_lookup <- fread(file.path(root_dir,'inputs/context_lookup_table.csv'))
 
 ### PART 1 - MODEL PERFORMANCE MEASURES ###
 
-# For each context, calculate the weighted interval score using the adjusted ensemble
-# prediction for the week prior to the event (t=-1)
+# Calculate a weighted interval score for a given context_id and model.
+# Evaluate performance for the week prior to the event (t=-1)
+pi_probs <- c(0.01, 0.025, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45,
+              0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.975, 0.99)
+pi_names <- paste0('q', pi_probs * 100)
+
 calc_wis <- function(context, model){
   
-  # load prediction intervals
-  if(model=='ensemble'){
-    pi <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==-1, .(location_id, q2.5, q50, q97.5)]
+  # load prediction quantiles
+  if (model=='adj_ensemble') {
+    preds <- fread(paste0(root_dir,'/batched_output/pred_adj_M2_context_',context,'.csv'))
+  } else if (model=='unadj_ensemble') {
+    preds <- fread(paste0(root_dir,'/batched_output/pred_pre_context_',context,'.csv'))[time_id==-1]
+  } else if (model=='unadj_naive') {
+    preds <- fread(paste0(root_dir,'/batched_output/candidate_mods_context_',context,'.csv'))[model=='model_1' & time_id==-1,]
   } else {
-    pi <- fread(paste0(root_dir,'/batched_output/candidate_mods_context_',context,'.csv'))[model=='model_1' & time_id==-1,
-                                                                                           .(location_id, q2.5, q50, q97.5)]
+    stop(paste(model, 'is not a valid model for the function calc_wis().'))
   }
   
   # load observed value
   obs <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id==-1,.(location_id, y)]
   
-  # combine
-  dt <- merge(obs,pi, by='location_id')
-  
   # calculate WIS
-  #score <- wis(observed = dt$y, 
-  #             predicted = dt[, .(q2.5, q0.5, q97.5)],
-  #             quantile = c(0.025, 0.5, 0.975))
-  
-  dt[, below := ifelse(y<q2.5,1,0)]
-  dt[, above := ifelse(y>q97.5,1,0)]
-  dt[, is := (q97.5 - q2.5) + (2/0.05)*(q2.5 - y)*below + (2/0.05)*(y - q97.5)*above]
-  
-  return(score)
+  scores <- wis(observed = obs$y, 
+               predicted = as.matrix(preds[, .SD, .SDcols = pi_names]),
+               quantile = pi_probs)
+
+  return(scores)
 }
 
-# TODO - Calculate forecast skill (skill = 1 - (wis_ens/wis_naive))
-calc_skill <- function(context){
-  ens_wis <- calc_wis(context, model='ensemble')
-  naive_wis <- calc_wis(context, model='model_1')
+# Calculate forecast skill (skill = 1 - (wis_ens/wis_naive))
+calc_skill <- function(context, adj=TRUE){
+  if (adj==TRUE){
+    numerator <- sum(calc_wis(context, model='adj_ensemble'))
+  } else {
+    numerator <- sum(calc_wis(context, model='unadj_ensemble'))
+  }
+  denominator <- sum(calc_wis(context, model='unadj_naive'))
+  
+  skill <- 1 - (numerator / denominator)
+  return(skill)
 }
 
+# Compile into a table with one row per context id
+build_performance_table <- function(context){
+  temp_dt <- data.table(context_id  = context,
+                        unadj_skill = round(calc_skill(context, adj=F),2),
+                        adj_skill   = round(calc_skill(context, adj=T),2))
+  return(temp_dt)
+}
+performance_dt <- rbindlist(lapply(context_lookup$context_id, build_performance_table))
 
-# Compile other measures of model performance
+# Add context info
+performance_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
+                        performance_dt, by='context_id')
+
+# Save table
+fwrite(performance_dt, paste0(root_dir,'/model_performance_summary.csv'))
+
+
+# Compile other measures of model performance (not currently output)
 get_performance_stats <- function(context){
   # empirical coverage and multiplier
   coverage <- fread(paste0(root_dir,'/batched_output/coverage_context_',context,'.csv'))
@@ -86,20 +104,17 @@ get_performance_stats <- function(context){
   return(temp_dt)
 }
 
-#performance_dt <- rbindlist(lapply(context_lookup$context_id, get_performance_stats))
-performance_dt <- rbindlist(lapply(1:5, get_performance_stats))
-performance_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, mandate_timing, pop_cat, pol_cat)],
-                        performance_dt, by='context_id')
+#addn_performance_dt <- rbindlist(lapply(context_lookup$context_id, get_performance_stats))
+#addn_performance_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)], 
+#                             addn_performance_dt, by='context_id')
 
-# Save table
-fwrite(performance_dt, paste0(root_dir,'/model_performance_summary.csv'))
+
 
 
 ### PART 2 - SIGNAL DETECTION ###
 
-# Compile results table
+### (A) Compile results table
 # Median effect size, IQR of the effect size, % of locations with effect in hypothesized direction
-#TODO - add meta-analytic p-value/binomial p-value
 calc_eff_size <- function(context){
   
   # load predictions
@@ -111,7 +126,7 @@ calc_eff_size <- function(context){
   # combine
   dt <- merge(obs,pi, by='location_id')
   
-  # calculate difference between observed and median if PI
+  # calculate difference between observed and median of PI
   dt[, eff_size := y - q50]
   
   # calculate p-value across all locations
@@ -121,44 +136,70 @@ calc_eff_size <- function(context){
   # calculate median and IQR of effect size across locations
   temp_dt <- data.table(context_id = context,
                         eff_size_median = round(median(dt$eff_size),2),
-                        eff_size_Q1 = round(quantile(dt$eff_size, 0.25),2),
-                        eff_size_Q3 = round(quantile(dt$eff_size, 0.75),2),
+                        eff_size_Q1 = round(quantile(dt$eff_size, 0.25),1),
+                        eff_size_Q3 = round(quantile(dt$eff_size, 0.75),1),
                         eff_size_IQR = round(IQR(dt$eff_size),2),
+                        num_sig_locs = k,
                         eff_pct_neg = round((sum(dt$eff_size<0)/nrow(dt))*100,1),
                         pct_sig_p = round((sum(dt$p_val<0.05)/nrow(dt))*100, 1),
                         binom_p = binom_p
                         )
   
+  temp_dt[, eff_size_final := paste0(eff_size_median,' (',eff_size_Q1,', ',eff_size_Q3,')')]
+  
   return(temp_dt)
 }
 
-#effect_size_dt <- rbindlist(lapply(context_lookup$context_id, calc_eff_size))
-effect_size_dt <- rbindlist(lapply(1:5, calc_eff_size))
-effect_size_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, mandate_timing, pop_cat, pol_cat)],
+effect_size_dt <- rbindlist(lapply(context_lookup$context_id, calc_eff_size))
+effect_size_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
                         effect_size_dt, by='context_id')
 # Save table
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
-# Make a forest plot
+### (B) Make a forest plot
 
-# Set levels of context_id wrt effect size so they appear in ascending
-# order in the plot
-effect_size_dt <- effect_size_dt %>%
-  arrange(desc(eff_size_median)) %>%
-  mutate(context_id = factor(context_id, levels = unique(context_id)))
+# Update the context ids within each event type so the intervals line up vertically
+# in the final plot
+plot_dt <- copy(effect_size_dt)
+plot_dt[, context_new :=  (context_id - 1) %% 6 + 1 ]
 
-# TODO sort by eff_size_median
-my_colors <- c("D" = "blue", "M" = "purple", "R" = "red")
-ggplot(effect_size_dt, aes(x=context_id, y=eff_size_median, ymin=eff_size_Q1, ymax=eff_size_Q3)) +
-  geom_hline(yintercept=0, linetype='dashed') +
-  geom_pointrange(aes(color=pol_cat, pch=pop_cat)) +
-  scale_color_manual(name="Political Affiliation", values = my_colors,
-                     labels = c("D"="Democrat", "M"="Moderate", "R"="Republican")) +
-  scale_shape_manual(name="Population", values = c('big' = 16, 'small' = 1), labels = c("big" = "100K+", "small" = "<100K")) +
-  scale_x_discrete(name="", labels=NULL) +
-  scale_y_continuous(name="Log Ratio") +
-  ggtitle('1st Restaurant Mandates') +
+my_colors <- c("D" = "blue", "M" = "#E69F00", "R" = "red")
+
+p1 <- ggplot(plot_dt, aes(x = context_new, y = eff_size_median, ymin = eff_size_Q1, ymax = eff_size_Q3)) +
+  geom_hline(yintercept = 0, linetype = 'dashed', color = "gray40") +
+  geom_pointrange(
+    aes(color = pol_cat, pch = pop_cat),
+    size = 0.5
+  ) +
+  scale_color_manual(
+    name = "Political Affiliation",
+    values = my_colors,
+    labels = c("D" = "Democrat", "M" = "Moderate", "R" = "Republican")
+  ) +
+  scale_shape_manual(
+    name = "Population",
+    values = c('big' = 16, 'small' = 2),  # triangle instead of open circle for small
+    labels = c("big" = "100K+", "small" = "<100K")
+  ) +
+  scale_x_discrete(name = "", labels = NULL) +
+  scale_y_continuous(name = "Log Ratio") +
   coord_flip() +
-  theme_classic() +
-  theme(axis.ticks.y = element_blank())
+  facet_grid(mandate_num ~ mandate_type, labeller = labeller(
+    mandate_num = c("first" = "First", "second" = "Second"),
+    mandate_type = c("bar" = "Bar", "restaurant" = "Restaurant"))
+  ) +
+  theme_bw() +
+  theme(
+    axis.ticks.y = element_blank(),
+    strip.text.y = element_text(angle = 0),          # readable strip labels
+    strip.background = element_rect(fill = "gray95", color = "gray70"),
+    panel.border = element_rect(color = "gray70"),   # lighter panel borders
+    panel.grid.major.y = element_blank(),            # remove horizontal gridlines (they're meaningless without y labels)
+    panel.grid.minor = element_blank(),
+    legend.position = "right"
+  )
+
+pdf(paste0(root_dir,'/forest_plot.pdf'), width=8, height=5)
+p1
+dev.off()

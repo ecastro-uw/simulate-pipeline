@@ -23,7 +23,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0417'     # For distinguishing output file names
+suffix    <- 'inv1_0417_v2'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 padding   <-  2         # Weeks of data to discard after a mandate lifts
@@ -264,7 +264,7 @@ check_mandates <- function(context) {
 
   # % of location-weeks with mandate in effect must be between mandate_lo and mandate_hi
   result  <- weekly_dt[, lapply(.SD, function(x) mean(x == 1)), .SDcols = col_names]
-  verdict <- result[, lapply(.SD, function(x) ifelse(x > mandate_lo & x < mandate_hi, 'X', '0')), .SDcols = col_names]
+  verdict <- result[, lapply(.SD, function(x) ifelse(x > mandate_lo & x < mandate_hi, 1, 0)), .SDcols = col_names]
   setnames(verdict, col_names, gsub('pct_', '', col_names))
 
   verdict$context_id <- context
@@ -273,13 +273,12 @@ check_mandates <- function(context) {
 
 mandate_covars <- rbindlist(lapply(unique(context_guide$context_id), check_mandates))
 
-# Exclude same-type mandate as a covariate (avoid collinearity with the outcome)
-mandate_covars[grepl("restaurant", event), dining := '0']
-mandate_covars[grepl("bar",        event), bar    := '0']
-
-# Add to the context guide
+# Add context guide info
 mandate_covars <- merge(context_guide, mandate_covars, by = 'context_id')
 
+# Exclude same-type mandate as a covariate (avoid collinearity with the outcome)
+mandate_covars[grepl("restaurant", event), dining := 0]
+mandate_covars[grepl("bar",        event), bar    := 0]
 
 # 3(B) Check if case and death data meet the covariate inclusion criteria for each context
 cases_dt <- fread(paste0(input_root, 'covid_cases_deaths.csv'))
@@ -301,8 +300,8 @@ check_cases_deaths <- function(context) {
   # % of location-weeks with non-zero values must exceed epi_threshold
   data.table(
     context_id = context,
-    cases  = ifelse(sum(weekly_dt$cases  > 0) / nrow(weekly_dt) > epi_threshold, 'X', '0'),
-    deaths = ifelse(sum(weekly_dt$deaths > 0) / nrow(weekly_dt) > epi_threshold, 'X', '0')
+    cases  = ifelse(sum(weekly_dt$cases  > 0) / nrow(weekly_dt) > epi_threshold, 1, 0),
+    deaths = ifelse(sum(weekly_dt$deaths > 0) / nrow(weekly_dt) > epi_threshold, 1, 0)
   )
 }
 
@@ -354,19 +353,19 @@ if (length(drop_log) > 0) {
 
 # 3(C) Resolve which models to run for each context
 context_lookup[, `:=`(
-  model_1  = 1,                                                                          # random walk
-  model_2  = 1,                                                                          # random walk with trend
-  model_3  = 1,                                                                          # linear AR model
-  model_4  = ifelse(cases == 'X', 1, 0),                                                 # AR + cases
-  model_5  = ifelse(cases == 'X' & deaths == 'X', 1, 0),                                 # AR + cases + deaths
-  model_6  = ifelse(edu == 'X', 1, 0),                                                   # AR + schools
-  model_7  = ifelse(gathering == 'X', 1, 0),                                             # AR + gatherings
-  model_8  = ifelse(gym == 'X', 1, 0),                                                   # AR + gym
-  model_9  = ifelse(bar == 'X', 1, 0),                                                   # AR + bar
-  #model_10 = ifelse(gathering == 'X' & bar == 'X', 1, 0),                                # AR + gatherings + bars
-  #model_11 = ifelse(gathering == 'X' & edu == 'X', 1, 0),                                # AR + gatherings + schools
-  #model_12 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X', 1, 0),                   # AR + gatherings + bars + schools
-  #model_13 = ifelse(gathering == 'X' & bar == 'X' & edu == 'X' & gym == 'X', 1, 0),      # AR + gatherings + bars + schools + gym
+  model_1  = 1,                                                                     # random walk
+  model_2  = 1,                                                                     # random walk with trend
+  model_3  = 1,                                                                     # linear AR model
+  model_4  = ifelse(cases == 1, 1, 0),                                              # AR + cases
+  model_5  = ifelse(cases == 1 & deaths == 1, 1, 0),                                     # AR + cases + deaths
+  model_6  = ifelse(edu == 1, 1, 0),                                                   # AR + schools
+  model_7  = ifelse(gathering == 1, 1, 0),                                             # AR + gatherings
+  model_8  = ifelse(gym == 1, 1, 0),                                                   # AR + gym
+  model_9  = ifelse(bar == 1, 1, 0),                                                   # AR + bar
+  #model_10 = ifelse(gathering == 1 & bar == 1, 1, 0),                                # AR + gatherings + bars
+  #model_11 = ifelse(gathering == 1 & edu == 1, 1, 0),                                # AR + gatherings + schools
+  #model_12 = ifelse(gathering == 1 & bar == 1 & edu == 1, 1, 0),                   # AR + gatherings + bars + schools
+  #model_13 = ifelse(gathering == 1 & bar == 1 & edu == 1 & gym == 1, 1, 0),      # AR + gatherings + bars + schools + gym
   model_10 = 0,
   model_11 = 0,
   model_12 = 0,
