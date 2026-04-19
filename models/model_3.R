@@ -1,5 +1,6 @@
 # Model 3: Linear Auto-Regressive Model 
 # Covariates: None
+# Note: Currently only supports w=1 (hard coded)
 
 model_3 <- function(dataset, w, d){
   

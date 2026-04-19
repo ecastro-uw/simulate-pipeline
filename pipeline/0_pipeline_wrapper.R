@@ -64,6 +64,7 @@ pipeline_inputs <- list(configs = configs,
 
 
 # RUN THE PIPELINE
+set.seed(configs$seed)
 result <- pipeline(pipeline_inputs)
 
 # Combine coverage output into a single table

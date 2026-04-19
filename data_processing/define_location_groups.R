@@ -23,7 +23,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0417_v2'     # For distinguishing output file names
+suffix    <- 'inv1_0418'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 padding   <-  2         # Weeks of data to discard after a mandate lifts
@@ -381,7 +381,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'timing_cat', 'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:20))
+                  'timing_cat', 'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:21))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 
