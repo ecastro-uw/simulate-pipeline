@@ -33,7 +33,14 @@ model_15 <- function(dataset, w, d) {
       dimnames = list(NULL, c("cases_lag2_sum", "deaths_lag2_sum"))
     )
 
-    tmp_model <- auto.arima(data_ts, xreg = xreg_train)
+    # auto.arima CSS optimizer fails when n_complete == k_xreg + 1 (0 residual df).
+    # Fall back to a no-intercept OLS (ARIMA(0,0,0) via closed form) in that case.
+    tmp_model <- tryCatch(
+      auto.arima(data_ts, xreg = xreg_train),
+      error = function(e) {
+        Arima(data_ts, order = c(0, 0, 0), xreg = xreg_train, include.mean = FALSE)
+      }
+    )
 
     # When auto.arima selects a model with drift, it prepends a "drift" column
     # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
