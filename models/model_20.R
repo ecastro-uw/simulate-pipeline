@@ -31,7 +31,12 @@ model_20 <- function(dataset, w, d) {
       xreg_train <- matrix(loc_data_complete$lagged_mandate_tot, ncol = 1,
                            dimnames = list(NULL, "lagged_mandate_tot"))
       tmp_model <- auto.arima(data_ts, xreg = xreg_train)
-      
+
+      # When auto.arima selects a model with drift, it prepends a "drift" column
+      # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
+      has_drift <- !is.null(tmp_model$xreg) && "drift" %in% colnames(tmp_model$xreg)
+      n_train   <- nrow(loc_data_complete)
+
       # Build future xreg for the w forecast steps.
       # When an index exceeds n, use persistence (last observed value).
       xreg_future <- matrix(NA_real_, nrow = w, ncol = 1,
@@ -41,7 +46,13 @@ model_20 <- function(dataset, w, d) {
         val1 <- if (idx1 <= n) mandate_tot_observed[idx1] else mandate_tot_observed[n]
         xreg_future[s, 1] <- val1
       }
-      
+
+      if (has_drift) {
+        drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
+                               dimnames = list(NULL, "drift"))
+        xreg_future <- cbind(drift_future, xreg_future)
+      }
+
       # Generate d simulation draws for the w-week-ahead forecast.
       # Each simulate() call draws one stochastic path; we keep only step w.
       draws <- sapply(seq_len(d), function(x) {
