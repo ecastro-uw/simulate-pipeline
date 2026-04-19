@@ -8,7 +8,7 @@ make_predictions <- function(data, pipeline_inputs){
   list_of_models <- configs$models
   w <- configs$w
   d <- configs$d
-  spread <- 4 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
+  spread <- 3 # total number of weeks to be forecast (2 weeks pre + 1 week post event)
   
   results <- vector("list", )
   # Use each model to forecast the desired number of time steps

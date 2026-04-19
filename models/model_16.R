@@ -25,8 +25,19 @@ model_16 <- function(dataset, w, d) {
     
     data_ts    <- ts(loc_data_complete$y)
     
-    if (sum(loc_data_complete$lagged_edu)>0) {
-      # If the covariate data are not all 0s, fit with external regressors
+    
+    if (length(unique(loc_data_complete$lagged_edu))==1) {
+      # If covariate has no variation, fit without external regressors
+      tmp_model <- auto.arima(data_ts)
+      
+      # Generate d simulation draws for the w-week-ahead forecast.
+      # Each simulate() call draws one stochastic path; we keep only step w.
+      draws <- sapply(seq_len(d), function(x) {
+        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+        sim[w]
+      })
+    } else {
+      # Otherwise, fit with external regressors
       xreg_train <- matrix(loc_data_complete$lagged_edu, ncol = 1,
                            dimnames = list(NULL, "lagged_edu"))
       tmp_model <- auto.arima(data_ts, xreg = xreg_train)
@@ -58,17 +69,7 @@ model_16 <- function(dataset, w, d) {
         sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w, xreg = xreg_future))
         sim[w]
       })
-    } else {
-      # Otherwise fit without them
-      tmp_model <- auto.arima(data_ts)
-      
-      # Generate d simulation draws for the w-week-ahead forecast.
-      # Each simulate() call draws one stochastic path; we keep only step w.
-      draws <- sapply(seq_len(d), function(x) {
-        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
-        sim[w]
-      })
-    }
+    } 
     
     # Compute sigma as RMSE of in-sample residuals
     resids <- residuals(tmp_model)
