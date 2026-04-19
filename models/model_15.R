@@ -26,14 +26,24 @@ model_15 <- function(dataset, w, d) {
     # Remove rows where either covariate is NA (first 2 rows due to lagging)
     loc_data_complete <- loc_data[!is.na(cases_lag2_sum) & !is.na(deaths_lag2_sum)]
 
-    data_ts    <- ts(loc_data_complete$y)
-    xreg_train <- matrix(
-      c(loc_data_complete$cases_lag2_sum, loc_data_complete$deaths_lag2_sum),
-      ncol = 2,
-      dimnames = list(NULL, c("cases_lag2_sum", "deaths_lag2_sum"))
+    # Only include regressors that have variation; a constant (e.g. all-zero)
+    # regressor causes auto.arima to fail.
+    use_cases  <- length(unique(loc_data_complete$cases_lag2_sum))  > 1
+    use_deaths <- length(unique(loc_data_complete$deaths_lag2_sum)) > 1
+    xreg_cols  <- c(
+      if (use_cases)  "cases_lag2_sum",
+      if (use_deaths) "deaths_lag2_sum"
     )
 
-    tmp_model <- auto.arima(data_ts, xreg = xreg_train)
+    data_ts <- ts(loc_data_complete$y)
+
+    if (length(xreg_cols) > 0) {
+      xreg_train <- as.matrix(loc_data_complete[, xreg_cols, with = FALSE])
+      tmp_model  <- auto.arima(data_ts, xreg = xreg_train)
+    } else {
+      xreg_train <- NULL
+      tmp_model  <- auto.arima(data_ts)
+    }
 
     # When auto.arima selects a model with drift, it prepends a "drift" column
     # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
@@ -43,23 +53,31 @@ model_15 <- function(dataset, w, d) {
     # Build future xreg for the w forecast steps.
     # For each variable: lag2_sum at horizon s = var_pc[n+s-1] + var_pc[n+s-2].
     # When an index exceeds n, use persistence (last observed value).
-    xreg_future <- matrix(NA_real_, nrow = w, ncol = 2,
-                          dimnames = list(NULL, c("cases_lag2_sum", "deaths_lag2_sum")))
-    for (s in seq_len(w)) {
-      idx1 <- n + s - 1
-      idx2 <- n + s - 2
-      cases_val1  <- if (idx1 <= n) cases_observed[idx1]  else cases_observed[n]
-      cases_val2  <- if (idx2 <= n) cases_observed[idx2]  else cases_observed[n]
-      deaths_val1 <- if (idx1 <= n) deaths_observed[idx1] else deaths_observed[n]
-      deaths_val2 <- if (idx2 <= n) deaths_observed[idx2] else deaths_observed[n]
-      xreg_future[s, "cases_lag2_sum"]  <- cases_val1  + cases_val2
-      xreg_future[s, "deaths_lag2_sum"] <- deaths_val1 + deaths_val2
+    if (length(xreg_cols) > 0) {
+      xreg_future <- matrix(NA_real_, nrow = w, ncol = length(xreg_cols),
+                            dimnames = list(NULL, xreg_cols))
+      for (s in seq_len(w)) {
+        idx1 <- n + s - 1
+        idx2 <- n + s - 2
+        if (use_cases) {
+          cases_val1 <- if (idx1 <= n) cases_observed[idx1] else cases_observed[n]
+          cases_val2 <- if (idx2 <= n) cases_observed[idx2] else cases_observed[n]
+          xreg_future[s, "cases_lag2_sum"] <- cases_val1 + cases_val2
+        }
+        if (use_deaths) {
+          deaths_val1 <- if (idx1 <= n) deaths_observed[idx1] else deaths_observed[n]
+          deaths_val2 <- if (idx2 <= n) deaths_observed[idx2] else deaths_observed[n]
+          xreg_future[s, "deaths_lag2_sum"] <- deaths_val1 + deaths_val2
+        }
+      }
+    } else {
+      xreg_future <- NULL
     }
 
     if (has_drift) {
       drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
                              dimnames = list(NULL, "drift"))
-      xreg_future <- cbind(drift_future, xreg_future)
+      xreg_future <- if (!is.null(xreg_future)) cbind(drift_future, xreg_future) else drift_future
     }
 
     # Generate d simulation draws for the w-week-ahead forecast.
