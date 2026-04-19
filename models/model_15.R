@@ -35,6 +35,11 @@ model_15 <- function(dataset, w, d) {
 
     tmp_model <- auto.arima(data_ts, xreg = xreg_train)
 
+    # When auto.arima selects a model with drift, it prepends a "drift" column
+    # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
+    has_drift <- !is.null(tmp_model$xreg) && "drift" %in% colnames(tmp_model$xreg)
+    n_train   <- nrow(loc_data_complete)
+
     # Build future xreg for the w forecast steps.
     # For each variable: lag2_sum at horizon s = var_pc[n+s-1] + var_pc[n+s-2].
     # When an index exceeds n, use persistence (last observed value).
@@ -49,6 +54,12 @@ model_15 <- function(dataset, w, d) {
       deaths_val2 <- if (idx2 <= n) deaths_observed[idx2] else deaths_observed[n]
       xreg_future[s, "cases_lag2_sum"]  <- cases_val1  + cases_val2
       xreg_future[s, "deaths_lag2_sum"] <- deaths_val1 + deaths_val2
+    }
+
+    if (has_drift) {
+      drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
+                             dimnames = list(NULL, "drift"))
+      xreg_future <- cbind(drift_future, xreg_future)
     }
 
     # Generate d simulation draws for the w-week-ahead forecast.
