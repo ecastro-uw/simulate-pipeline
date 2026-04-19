@@ -39,7 +39,40 @@ model_15 <- function(dataset, w, d) {
 
     if (length(xreg_cols) > 0) {
       xreg_train <- as.matrix(loc_data_complete[, xreg_cols, with = FALSE])
-      tmp_model  <- auto.arima(data_ts, xreg = xreg_train)
+      # Drop linearly dependent columns; a rank-deficient xreg causes a
+      # singular Hessian in auto.arima even when each column has variation.
+      qr_decomp <- qr(xreg_train)
+      if (qr_decomp$rank < ncol(xreg_train)) {
+        keep       <- qr_decomp$pivot[seq_len(qr_decomp$rank)]
+        xreg_cols  <- xreg_cols[keep]
+        xreg_train <- xreg_train[, keep, drop = FALSE]
+        use_cases  <- "cases_lag2_sum"  %in% xreg_cols
+        use_deaths <- "deaths_lag2_sum" %in% xreg_cols
+      }
+    }
+
+    if (length(xreg_cols) > 0) {
+      # Singularity can still occur with very few observations relative to the
+      # ARIMA order chosen (e.g. 4 obs, d=1, 2 regressors → 3 effective rows
+      # for 3 parameters). Fall back to univariate in that case.
+      fell_back <- FALSE
+      tmp_model <- tryCatch(
+        auto.arima(data_ts, xreg = xreg_train),
+        error = function(e) {
+          if (grepl("singular", conditionMessage(e), ignore.case = TRUE)) {
+            fell_back <<- TRUE
+            auto.arima(data_ts)
+          } else {
+            stop(e)
+          }
+        }
+      )
+      if (fell_back) {
+        xreg_cols  <- character(0)
+        xreg_train <- NULL
+        use_cases  <- FALSE
+        use_deaths <- FALSE
+      }
     } else {
       xreg_train <- NULL
       tmp_model  <- auto.arima(data_ts)
