@@ -48,8 +48,8 @@ sbatch(jobname = 'its_pipeline',
        q = "all.q",
        arr_len = n_contexts,
        log=T,
-       e = file.path(out_dir, 'logs/error_context_%a.txt'),
-       o = file.path(out_dir, 'logs/out_context_%a.txt'),
+       error_file = file.path(out_dir, 'logs/error_context_%a.txt'),
+       output_file = file.path(out_dir, 'logs/out_context_%a.txt'),
        submit=T
 )
 

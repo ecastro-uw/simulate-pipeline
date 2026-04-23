@@ -16,10 +16,10 @@ library(ggplot2)
 library(dplyr)
 
 # args
-version_id <- '20260417.03'
+version_id <- '20260418.01'
 
 # dirs
-root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs/',version_id)
+root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
 
 # load context lookup file
 context_lookup <- fread(file.path(root_dir,'inputs/context_lookup_table.csv'))
@@ -203,3 +203,54 @@ p1 <- ggplot(plot_dt, aes(x = context_new, y = eff_size_median, ymin = eff_size_
 pdf(paste0(root_dir,'/forest_plot.pdf'), width=8, height=5)
 p1
 dev.off()
+
+
+### PART 2 - VETTING PLOTS ###
+
+### (A) Ensemble weight heat map
+
+# Read and combine all 24 files
+all_weights <- rbindlist(
+  lapply(1:24, function(x) {
+    dt <- fread(paste0(root_dir,'/batched_output/ens_weights_context_',x,'.csv'))
+    dt[, context := x]
+    dt
+  }),
+  fill = TRUE
+)
+
+# Pivot wide, filling missing model-context combos with 0
+wide <- dcast(all_weights, context ~ model, value.var = "weight", fill = 0)
+
+# Melt back to long for ggplot
+long <- melt(wide, id.vars = "context", variable.name = "model", value.name = "weight")
+
+# Order models numerically (model_1, model_2, ..., model_20)
+long[, model := factor(model, levels = paste0("model_", 1:20))]
+
+# rank models
+long[, rank := frankv(weight, order = -1L), by = context]
+
+
+# Plot
+ggplot(long, aes(x = model, y = factor(context), fill = weight)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  geom_text(data = long[rank <= 3],
+            aes(label=rank), size=3, fontface="bold") +
+  scale_fill_gradientn(
+    colors = c("white", "#fee8c8", "#e34a33"),
+    #trans = "log1p",
+    name = "Weight",
+    labels = scales::scientific
+  ) +
+  scale_y_discrete(limits = rev) +          # context 1 at top
+  labs(
+    title = "Ensemble Weights by Context and Model",
+    x = "Model",
+    y = "Context"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x  = element_text(angle = 45, hjust = 1),
+    panel.grid   = element_blank()
+  )

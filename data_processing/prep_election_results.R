@@ -6,12 +6,16 @@ library(data.table)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # Define dirs
-input_path <- "/ihme/scratch/users/ems2285/thesis/inputs/data/countypres_2000-2024_MIT.csv"
-out_path <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/election_results.csv'
+input_path <-       "/ihme/scratch/users/ems2285/thesis/inputs/data/countypres_2000-2024_MIT.csv"
+input_state_lvl <-  "/ihme/scratch/users/ems2285/thesis/inputs/data/1976-2020-president_MIT.csv"
+out_path <-         "/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/election_results.csv"
+output_state_lvl <- "/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_states/election_results.csv"
 
 # load the location hierarchy
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
 
+
+### COUNTIES ###
 # Load the raw data
 dt <- fread(input_path)[year==2020 & mode=='TOTAL' & party %in% c('REPUBLICAN', 'DEMOCRAT'),
                         .(state = tolower(state), county = tolower(county_name),
@@ -138,3 +142,22 @@ final <- final[location_id %in% final[, .N, by = location_id][N == 2, location_i
 
 # Save
 fwrite(final, out_path)
+
+
+
+
+### STATES ###
+# Load the raw data
+dt <- fread(input_state_lvl)[year==2020 & party_simplified %in% c('REPUBLICAN', 'DEMOCRAT'),
+                        .(state = tolower(state),
+                          party = party_simplified,
+                          candidate,
+                          votes = candidatevotes,
+                          total_votes = totalvotes)]
+
+# Add a location id
+dt2 <- merge(dt, hierarchy[level==2, .(location_id, state=tolower(location_name))], by='state', all.x=T)
+dt2 <- dt2[, .(location_id, party, candidate, votes, total_votes)]
+
+# Save
+fwrite(dt2, output_state_lvl)

@@ -23,9 +23,10 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0418'     # For distinguishing output file names
+suffix    <- 'inv2_0419'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
-loc_units <- 'counties' # states or counties
+loc_units <- 'states' # states or counties]
+data_source <- 'safegraph'
 padding   <-  2         # Weeks of data to discard after a mandate lifts
 
 # --- Paths ---
@@ -37,9 +38,9 @@ pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
 min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
 padding          <- 2       # Waiting period after first lift
-max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
-min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
-min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
+max_train_wks    <- 4       # Maximum training window length for first impositions (weeks)
+min_train_wks    <- 4       # Minimum training window length for first impositions (weeks)
+min_train_flex   <- 2       # Flexibility window around minimum for second impositions (weeks)
 mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
 mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
 epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
@@ -83,11 +84,16 @@ for (event in event_list) {
   }
   
   # Load mobility data
-  cat_name <- ifelse(grepl('restaurant', event), 'Restaurants', 'Drinking')
-  outcome_dt <- fread(paste0(input_root,'/processed_safegraph_data.csv'))[top_category %like% cat_name, .(location_id, date, v = visit_count)]
-  outcome_dt <- outcome_dt[! is.na(v)]
-  setorder(outcome_dt, location_id, date)
-  
+  if (data_source == 'safegraph') {
+    cat_name <- ifelse(grepl('restaurant', event), 'Restaurants', 'Drinking')
+    outcome_dt <- fread(paste0(input_root,'/processed_safegraph_data.csv'))[top_category %like% cat_name, .(location_id, date, v = visit_count)]
+    outcome_dt <- outcome_dt[! is.na(v)]
+    setorder(outcome_dt, location_id, date)
+  } else if (data_source == 'google') {
+    outcome_dt <- fread(paste0(input_root,'/google_mobility.csv'))[, .(location_id, date, v = retail_and_recreation_percent_change_from_baseline)]
+    setorder(outcome_dt, location_id, date)
+  }
+    
   # Check for locations missing from the mobility file
   no_mob <- setdiff(event_dt$location_id, outcome_dt$location_id)
   if (length(no_mob) > 0) {
@@ -99,16 +105,18 @@ for (event in event_list) {
   outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
   
   # Check for missing data in the baseline period
-  baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06']
-  complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
-  incomplete_baseline <- setdiff(unique(event_dt$location_id), complete_baseline)
-  if (length(incomplete_baseline) > 0) {
-    drop_log[[paste0(event, '__incomplete_baseline')]] <- data.table(
-      location_id = incomplete_baseline, event = event, reason = 'incomplete_baseline'
-    )
+  if(data_source=='safegraph'){
+    baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06']
+    complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
+    incomplete_baseline <- setdiff(unique(event_dt$location_id), complete_baseline)
+    if (length(incomplete_baseline) > 0) {
+      drop_log[[paste0(event, '__incomplete_baseline')]] <- data.table(
+        location_id = incomplete_baseline, event = event, reason = 'incomplete_baseline'
+      )
+    }
+    event_dt <- event_dt[! location_id %in% incomplete_baseline]
+    outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
   }
-  event_dt <- event_dt[! location_id %in% incomplete_baseline]
-  outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
   
   # Check for missing data in the analysis period
   outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
@@ -117,8 +125,8 @@ for (event in event_list) {
                                date < (onset_date + 7L)]
     outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
     
-    # Check if any locations having missing weeks (we expect exactly 9 weeks for first imposition)
-    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < 9]
+    # Check if any locations having missing weeks
+    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (max_train_wks+1)]
     # Check if any locations have missing days (each time_id should have 7 rows associated with it)
     missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
     # Combine
@@ -168,34 +176,10 @@ for (event in event_list) {
   event_dt <- merge(event_dt, elect_wide[, .(location_id, pol_cat)], by = 'location_id')
 
   # Define mandate timing category
-  if (mandate_num == 'first') {
-    event_dt[, timing_cat := 'Mar-Apr 2020']
-  } else if (event == 'second_restaurant') {
-    if(F){
-    event_dt[, month := month(onset_date)]
-    event_dt[, year  := year(onset_date)]
-    event_dt[, timing_cat := ifelse(year == 2020 & month %in% 6:11, 'Jun-Nov 2020',
-                               ifelse((year == 2020 & month == 12) | (year == 2021 & month %in% 1:5),
-                                      'Dec 2020-May 2021', NA_character_))]
-    out_of_window <- event_dt[is.na(timing_cat), location_id]
-    if (length(out_of_window) > 0) {
-      warning(sprintf('%d location(s) in %s have onset_date outside expected timing windows and will be dropped.',
-                      length(out_of_window), event))
-      drop_log[[paste0(event, '__out_of_window')]] <- data.table(
-        location_id = out_of_window, event = event, reason = 'onset_outside_timing_window'
-      )
-      event_dt <- event_dt[!is.na(timing_cat)]
-    }
-    event_dt[, c('month', 'year') := NULL]
-    }
-    event_dt[, timing_cat := "Jun-Dec 2020"]
-  } else { # second bar mandates:
-    #event_dt[, timing_cat := 'Jun 2020-May 2021']
-    event_dt[, timing_cat := 'Jun-Dec 2020']
-  }
+  #TODO - for 2nd mandates, check for onset dates occurring after end of mobility data availability
 
   # Collect relevant columns and append to all_contexts
-  cols_out <- c('location_id', 'onset_date', 'timing_cat', 'pop_cat', 'pol_cat')
+  cols_out <- c('location_id', 'onset_date', 'pop_cat', 'pol_cat')
   if (mandate_num == 'second') cols_out <- c(cols_out, 'prev_lift', 'int_wks')
   context_map        <- event_dt[, .SD, .SDcols = cols_out]
   context_map[, event := event]
@@ -205,15 +189,15 @@ for (event in event_list) {
 
 # Ensure proper sorting before assigning context ids
 #all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Nov 2020', 'Dec 2020-May 2021', 'Jun 2020-May 2021'))]
-all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Dec 2020'))]
+#all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Dec 2020'))]
 all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar'))]
-all_contexts <- all_contexts[order(event, timing_cat, pop_cat, pol_cat)]
+all_contexts <- all_contexts[order(event, pop_cat, pol_cat)]
 
 # Assign context IDs
-all_contexts[, context_id := .GRP, by = c('event', 'timing_cat', 'pop_cat', 'pol_cat')]
+all_contexts[, context_id := .GRP, by = c('event', 'pop_cat', 'pol_cat')]
 
 # Build context definitions (one row per context)
-context_guide <- all_contexts[, .N, by = c('context_id', 'event', 'timing_cat', 'pop_cat', 'pol_cat')]
+context_guide <- all_contexts[, .N, by = c('context_id', 'event', 'pop_cat', 'pol_cat')]
 context_guide[, `:=`(
   country      = country,
   ADMN         = ifelse(loc_units == 'states', 1, 2),
@@ -381,7 +365,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'timing_cat', 'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:21))
+                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:21))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 
