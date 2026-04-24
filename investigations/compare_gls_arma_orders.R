@@ -63,8 +63,19 @@ fit_ar1 <- gls(y ~ 1, data = dt,
                correlation = corARMA(p = 1, q = 0, form = ~time_id | location_id))
 
 cat("Fitting AR(2)...\n")
-fit_ar2 <- gls(y ~ 1, data = dt,
-               correlation = corARMA(p = 2, q = 0, form = ~time_id | location_id))
+# AR(2) is prone to "Coefficient matrix not invertible" errors because the
+# stationarity region for (phi1, phi2) is a triangle in 2D; the optimizer
+# can step outside it during initialisation. We try explicit starting values
+# first, then fall back to NA if the model still fails to converge.
+fit_ar2 <- tryCatch(
+  gls(y ~ 1, data = dt,
+      correlation = corARMA(p = 2, q = 0, value = c(0.3, 0.1),
+                            form = ~time_id | location_id)),
+  error = function(e) {
+    cat("  AR(2) failed to converge:", conditionMessage(e), "\n")
+    NULL
+  }
+)
 
 cat("Fitting ARMA(1,1)...\n")
 fit_arma11 <- gls(y ~ 1, data = dt,
@@ -73,15 +84,18 @@ fit_arma11 <- gls(y ~ 1, data = dt,
 # -----------------------------------------------------------------------
 # Compare AIC / BIC
 # -----------------------------------------------------------------------
+safe_aic <- function(fit) if (is.null(fit)) NA_real_ else AIC(fit)
+safe_bic <- function(fit) if (is.null(fit)) NA_real_ else BIC(fit)
+
 results <- data.table(
   model    = c("AR(1)", "AR(2)", "ARMA(1,1)"),
   n_params = c(3L, 4L, 4L),   # intercept + ARMA params + sigma
-  AIC      = c(AIC(fit_ar1), AIC(fit_ar2), AIC(fit_arma11)),
-  BIC      = c(BIC(fit_ar1), BIC(fit_ar2), BIC(fit_arma11))
+  AIC      = c(safe_aic(fit_ar1), safe_aic(fit_ar2), safe_aic(fit_arma11)),
+  BIC      = c(safe_bic(fit_ar1), safe_bic(fit_ar2), safe_bic(fit_arma11))
 )
-results[, delta_AIC := round(AIC - min(AIC), 2)]
-results[, delta_BIC := round(BIC - min(BIC), 2)]
-setorder(results, AIC)
+results[, delta_AIC := round(AIC - min(AIC, na.rm = TRUE), 2)]
+results[, delta_BIC := round(BIC - min(BIC, na.rm = TRUE), 2)]
+setorder(results, AIC, na.last = TRUE)
 
 cat("\n=== ARMA order comparison (lower = better) ===\n")
 print(results)
@@ -94,6 +108,10 @@ cat("\n=== Estimated parameters ===\n")
 for (nm in c("AR(1)", "AR(2)", "ARMA(1,1)")) {
   fit <- switch(nm, "AR(1)" = fit_ar1, "AR(2)" = fit_ar2, "ARMA(1,1)" = fit_arma11)
   cat(sprintf("\n%s:\n", nm))
+  if (is.null(fit)) {
+    cat("  (did not converge)\n")
+    next
+  }
   cat(sprintf("  intercept = %7.4f\n", coef(fit)[[1L]]))
   cat(sprintf("  sigma     = %7.4f\n", fit$sigma))
   pars <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
