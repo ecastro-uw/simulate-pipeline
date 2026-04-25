@@ -16,11 +16,24 @@ model_32 <- function(dataset, w, d) {
   # Drop rows with NA covariates (first 2 rows per location due to lagging)
   dt_complete <- dt[!is.na(deaths_lag2_sum)]
 
-  # Fit lme with location random intercepts and global ARMA(1,1) errors
-  fit <- lme(y ~ deaths_lag2_sum,
-             random      = ~1 | location_id,
-             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id),
-             data        = dt_complete)
+  # Fit lme with location random intercepts and global ARMA(1,1) errors.
+  # Deaths data is sparse/skewed, so we increase iteration limits and fall back
+  # to the "optim" optimizer if the default "nlminb" hits its iteration cap.
+  fit <- tryCatch(
+    lme(y ~ deaths_lag2_sum,
+        random      = ~1 | location_id,
+        correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id),
+        data        = dt_complete,
+        control     = lmeControl(msMaxIter = 200, maxIter = 200, niterEM = 100)),
+    error = function(e) {
+      lme(y ~ deaths_lag2_sum,
+          random      = ~1 | location_id,
+          correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id),
+          data        = dt_complete,
+          control     = lmeControl(msMaxIter = 500, maxIter = 500, niterEM = 100,
+                                   opt = "optim"))
+    }
+  )
 
   # Extract fixed-effect parameters
   beta_hat  <- fixef(fit)
