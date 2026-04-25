@@ -8,8 +8,7 @@
 
 # Investigation 1:
 # For each of the four imposition categories (1st/2nd restaurant/bar), group US counties
-# by size (big/small) and political affiliation (rep/dem/mod). Additionally, for 2nd
-# restaurant impositions, group imposition timing by Jun-Nov 2020 vs Dec 2020-May 2021.
+# by size (big/small) and political affiliation (rep/dem/mod). 
 
 # Investigation 2:
 # Location group definitions TBD
@@ -23,9 +22,9 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv2_0419'     # For distinguishing output file names
+suffix    <- 'inv1_0425'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
-loc_units <- 'states' # states or counties]
+loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
 padding   <-  2         # Weeks of data to discard after a mandate lifts
 
@@ -38,12 +37,12 @@ pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
 min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
 padding          <- 2       # Waiting period after first lift
-max_train_wks    <- 4       # Maximum training window length for first impositions (weeks)
-min_train_wks    <- 4       # Minimum training window length for first impositions (weeks)
+max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
+min_train_wks    <- 6       # Minimum training window length for first impositions (weeks)
 min_train_flex   <- 2       # Flexibility window around minimum for second impositions (weeks)
-mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
-mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
-epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
+#mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
+#mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
+#epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
 
 
 # Load population data and define bins (big/small)
@@ -175,7 +174,6 @@ for (event in event_list) {
   }
   event_dt <- merge(event_dt, elect_wide[, .(location_id, pol_cat)], by = 'location_id')
 
-  # Define mandate timing category
   #TODO - for 2nd mandates, check for onset dates occurring after end of mobility data availability
 
   # Collect relevant columns and append to all_contexts
@@ -188,8 +186,6 @@ for (event in event_list) {
 
 
 # Ensure proper sorting before assigning context ids
-#all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Nov 2020', 'Dec 2020-May 2021', 'Jun 2020-May 2021'))]
-#all_contexts[, timing_cat := factor(timing_cat, levels = c('Mar-Apr 2020', 'Jun-Dec 2020'))]
 all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar'))]
 all_contexts <- all_contexts[order(event, pop_cat, pol_cat)]
 
@@ -245,14 +241,25 @@ check_mandates <- function(context) {
                                 pct_dining     = sum(dining_close) / 7,
                                 pct_bar        = sum(bar_close) / 7),
                             by = c('location_id', 'time_id')]
+  
+  # lag by one week to reflect the model covariate
+  weekly_dt <- weekly_dt[, 
+                         (col_names) := lapply(.SD, shift), 
+                         by = location_id, 
+                         .SDcols = col_names
+  ][!is.na(pct_edu)]
 
-  # % of location-weeks with mandate in effect must be between mandate_lo and mandate_hi
-  result  <- weekly_dt[, lapply(.SD, function(x) mean(x == 1)), .SDcols = col_names]
-  verdict <- result[, lapply(.SD, function(x) ifelse(x > mandate_lo & x < mandate_hi, 1, 0)), .SDcols = col_names]
+  # If there is any variation, include as a covariate
+  result <- weekly_dt[, lapply(.SD, function(x) length(unique(x))), .SDcols = col_names]
+  verdict <- result[, lapply(.SD, function(x) ifelse(x > 1, 1, 0)), .SDcols = col_names]
+  
+  # old criteria: 10-90% of location-weeks with mandate in effect the whole week
+  #result  <- weekly_dt[, lapply(.SD, function(x) mean(x == 1)), .SDcols = col_names]
+  #verdict <- result[, lapply(.SD, function(x) ifelse(x > mandate_lo & x < mandate_hi, 1, 0)), .SDcols = col_names]
+  
   setnames(verdict, col_names, gsub('pct_', '', col_names))
-
   verdict$context_id <- context
-  verdict
+  return(verdict)
 }
 
 mandate_covars <- rbindlist(lapply(unique(context_guide$context_id), check_mandates))
@@ -280,19 +287,26 @@ check_cases_deaths <- function(context) {
   weekly_dt <- min_train_dt[, .(cases  = sum(daily_cases),
                                 deaths = sum(daily_deaths)),
                             by = c('location_id', 'time_id')]
+  
+  # the covariate is defined as the sum over the last 2 weeks
+  weekly_dt[, cases_lag2_sum := frollsum(shift(cases, 1), n = 2, align = "right"), by = location_id]
+  weekly_dt[, deaths_lag2_sum := frollsum(shift(deaths, 1), n = 2, align = "right"), by = location_id]
+  weekly_dt <- weekly_dt[! is.na(cases_lag2_sum)]
 
-  # % of location-weeks with non-zero values must exceed epi_threshold
+  # # of location-weeks with non-zero values must exceed 5
   data.table(
     context_id = context,
-    cases  = ifelse(sum(weekly_dt$cases  > 0) / nrow(weekly_dt) > epi_threshold, 1, 0),
-    deaths = ifelse(sum(weekly_dt$deaths > 0) / nrow(weekly_dt) > epi_threshold, 1, 0)
+    cases = ifelse(sum(weekly_dt$cases_lag2_sum > 0) >5, 1, 0),
+    deaths = ifelse(sum(weekly_dt$deaths_lag2_sum > 0) >5, 1, 0)
+    #cases  = ifelse(sum(weekly_dt$cases  > 0) / nrow(weekly_dt) > epi_threshold, 1, 0),
+    #deaths = ifelse(sum(weekly_dt$deaths > 0) / nrow(weekly_dt) > epi_threshold, 1, 0)
   )
 }
 
 epi_covars     <- rbindlist(lapply(unique(context_guide$context_id), check_cases_deaths))
 context_lookup <- merge(mandate_covars, epi_covars, by = 'context_id')
 
-# 3(B continued) Log locations with missing cases or deaths data
+# 3(B continued) Document locations with missing cases or deaths data
 for (event_name in event_list) {
   one_event   <- all_contexts[event == event_name]
   mandate_num <- ifelse(substr(event_name, 1, 5) == 'first', 'first', 'second')
@@ -339,25 +353,39 @@ if (length(drop_log) > 0) {
 context_lookup[, `:=`(
   model_1  = 1,                                                                     # random walk
   model_2  = 1,                                                                     # random walk with trend
-  model_3  = 1,                                                                     # linear AR model
-  model_4  = ifelse(cases == 1, 1, 0),                                              # AR + cases
-  model_5  = ifelse(deaths == 1, 1, 0),                                             # AR + deaths
-  model_6  = ifelse(cases == 1 & deaths == 1, 1, 0),                                # AR + cases + deaths
-  model_7  = ifelse(edu == 1, 1, 0),                                                # AR + schools
-  model_8  = ifelse(gathering == 1, 1, 0),                                          # AR + gatherings
-  model_9  = ifelse(gym == 1, 1, 0),                                                # AR + gym
-  model_10  = ifelse(bar == 1, 1, 0),                                               # AR + bar
-  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # AR + sum of mandates
-  model_12 = 1,                                                                     # auto.arima
-  model_13 = ifelse(cases == 1, 1, 0),                                              # auto.arima + cases
-  model_14 = ifelse(deaths == 1, 1, 0),                                             # auto.arima + deaths
-  model_15 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # auto.arima + cases + deaths
-  model_16 = ifelse(edu == 1, 1, 0),                                                # auto.arima + schools
-  model_17 = ifelse(gathering == 1, 1, 0),                                          # auto.arima + gatherings
-  model_18 = ifelse(gym == 1, 1, 0),                                                # auto.arima + gym
-  model_19 = ifelse(bar == 1, 1, 0),                                                # auto.arima + bar
-  model_20 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # auto.arima + sum of mandates
-  model_21 = 0                                                                      # neural network
+  # OLS with lagged outcome
+  model_3  = 1,                                                                     # OLS: lagged y
+  model_4  = ifelse(cases == 1, 1, 0),                                              # OLS: lagged y + cases
+  model_5  = ifelse(deaths == 1, 1, 0),                                             # OLS: lagged y + deaths
+  model_6  = ifelse(cases == 1 & deaths == 1, 1, 0),                                # OLS: lagged y + cases + deaths
+  model_7  = ifelse(edu == 1, 1, 0),                                                # OLS: lagged y + schools
+  model_8  = ifelse(gathering == 1, 1, 0),                                          # OLS: lagged y + gatherings
+  model_9  = ifelse(gym == 1, 1, 0),                                                # OLS: lagged y + gym
+  model_10  = ifelse(bar == 1, 1, 0),                                               # OLS: lagged y + bar
+  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # OLS: lagged y + sum of mandates
+  # GLS with ARMA(1,1) errors
+  model_21 = 1,                                                                     # GLS: 1
+  model_22 = ifelse(cases == 1, 1, 0),                                              # GLS: cases
+  model_23 = ifelse(deaths == 1, 1, 0),                                             # GLS: deaths
+  model_24 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # GLS: cases + deaths
+  model_25 = ifelse(edu == 1, 1, 0),                                                # GLS: schools
+  model_26 = ifelse(gathering == 1, 1, 0),                                          # GLS: gatherings
+  model_27 = ifelse(gym == 1, 1, 0),                                                # GLS: gym
+  model_28 = ifelse(bar == 1, 1, 0),                                                # GLS: bar
+  model_29 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # GLS: sum of mandates
+  # LME with location random intercepts and ARMA(1,1) errors
+  model_30 = 1,                                                                     # LME: (1|location)
+  model_31 = ifelse(cases == 1, 1, 0),                                              # LME: cases
+  model_32 = ifelse(deaths == 1, 1, 0),                                             # LME: deaths
+  model_33 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # LME: cases + deaths
+  model_34 = ifelse(edu == 1, 1, 0),                                                # LME: schools
+  model_35 = ifelse(gathering == 1, 1, 0),                                          # LME: gatherings
+  model_36 = ifelse(gym == 1, 1, 0),                                                # LME: gym
+  model_37 = ifelse(bar == 1, 1, 0),                                                # LME: bar
+  model_38 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # LME: sum of mandates
+  # Miscellaneous
+  model_39 = 0,                                                                     # exponential smoothing
+  model_40 = 0                                                                      # neural network
 )]
 
 
@@ -365,7 +393,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:21))
+                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:11), paste0('model_', 21:40))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 

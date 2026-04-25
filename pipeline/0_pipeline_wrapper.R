@@ -9,6 +9,7 @@ library(yaml)
 library(boot)
 library(MASS)
 library(forecast)
+library(nlme)
 
 
 # Get arguments from parser
