@@ -1,95 +1,74 @@
-# Model 13: auto.arima
-# Covariates: cases_lag2_sum (sum of cases_pc over previous 2 weeks)
+# Model 13: GLS with ARMA(1,1) errors
+# Covariates: Cases (total reported per 10K pop over last 2 weeks)
+# Coefficients estimated globally across all locations.
+# ARMA(1,1) error structure captures temporal autocorrelation.
 
 model_13 <- function(dataset, w, d) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
 
-  # Compute cases_lag2_sum: cases_pc[t-1] + cases_pc[t-2]
-  dt[, cases_lag2_sum := frollsum(shift(cases_pc, 1), n = 2, align = "right"), by = location_id]
+  # Calculate sum of cases over the previous 2 weeks (excluding current week)
+  dt[, cases_lag2_sum := frollsum(shift(cases_pc, 1), n = 2, align = "right"),
+     by = location_id]
 
-  locations    <- unique(dt$location_id)
-  results_list <- vector("list", length(locations))
+  # Drop rows with NA covariates (first 2 rows per location due to lagging)
+  dt_complete <- dt[!is.na(cases_lag2_sum)]
 
-  for (i in seq_along(locations)) {
-    loc      <- locations[i]
-    loc_data <- dt[location_id == loc]
-    setorder(loc_data, time_id)
+  # Fit gls with ARMA(1,1) errors, pooled across all locations
+  fit <- gls(y ~ cases_lag2_sum,
+             data        = dt_complete,
+             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id))
 
-    n              <- nrow(loc_data)
-    cases_observed <- loc_data$cases_pc
+  # Extract ARMA(1,1) parameters
+  params <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
+  phi    <- params[["Phi1"]]
+  theta  <- params[["Theta1"]]
+  sigma  <- fit$sigma
 
-    # Remove rows where cases_lag2_sum is NA (first 2 rows due to lagging)
-    loc_data_complete <- loc_data[!is.na(cases_lag2_sum)]
+  # Compute last innovation per location via ARMA(1,1) filter:
+  # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
+  dt_complete[, gls_resid := residuals(fit)]
+  loc_stats <- dt_complete[, {
+    eps     <- gls_resid
+    n       <- .N
+    eta     <- numeric(n)
+    eta[1L] <- eps[1L]
+    for (j in 2L:n) eta[j] <- eps[j] - phi * eps[j - 1L] - theta * eta[j - 1L]
+    .(last_resid = eps[n], last_eta = eta[n])
+  }, by = location_id]
 
-    data_ts    <- ts(loc_data_complete$y)
-    
-    
-    if (length(unique(loc_data_complete$cases_lag2_sum))==1) {
-      # If covariate has no variation, fit without external regressors
-      tmp_model <- auto.arima(data_ts)
-      
-      # Generate d simulation draws for the w-week-ahead forecast.
-      # Each simulate() call draws one stochastic path; we keep only step w.
-      draws <- sapply(seq_len(d), function(x) {
-        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
-        sim[w]
-      })
-    } else {
-      # Otherwise, fit with external regressors
-      xreg_train <- matrix(loc_data_complete$cases_lag2_sum, ncol = 1,
-                           dimnames = list(NULL, "cases_lag2_sum"))
-  
-      tmp_model <- auto.arima(data_ts, xreg = xreg_train)
-  
-      # When auto.arima selects a model with drift, it prepends a "drift" column
-      # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
-      has_drift <- !is.null(tmp_model$xreg) && "drift" %in% colnames(tmp_model$xreg)
-      n_train   <- nrow(loc_data_complete)
-  
-      # Build future xreg for the w forecast steps.
-      # cases_lag2_sum at horizon s = cases_pc[n+s-1] + cases_pc[n+s-2].
-      # When an index exceeds n, use persistence (last observed value).
-      xreg_future <- matrix(NA_real_, nrow = w, ncol = 1,
-                            dimnames = list(NULL, "cases_lag2_sum"))
-      for (s in seq_len(w)) {
-        idx1 <- n + s - 1
-        idx2 <- n + s - 2
-        val1 <- if (idx1 <= n) cases_observed[idx1] else cases_observed[n]
-        val2 <- if (idx2 <= n) cases_observed[idx2] else cases_observed[n]
-        xreg_future[s, 1] <- val1 + val2
-      }
-  
-      if (has_drift) {
-        drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
-                               dimnames = list(NULL, "drift"))
-        xreg_future <- cbind(drift_future, xreg_future)
-      }
-  
-      # Generate d simulation draws for the w-week-ahead forecast.
-      # Each simulate() call draws one stochastic path; we keep only step w.
-      draws <- sapply(seq_len(d), function(x) {
-        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w, xreg = xreg_future))
-        sim[w]
-      })
-    }
+  # Build forecast data: cases_lag2_sum at T+1 = cases_pc[T] + cases_pc[T-1]
+  last_time_step <- max(dt$time_id)
+  last_two <- dt[time_id %in% c(last_time_step - 1L, last_time_step),
+                 .(location_id, time_id, cases_pc)]
+  new_dt <- last_two[, .(time_id        = last_time_step + w,
+                         cases_lag2_sum = sum(cases_pc)),
+                     by = location_id]
 
-    # Compute sigma as RMSE of in-sample residuals
-    resids <- residuals(tmp_model)
-    sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
+  # Design matrix
+  X_new <- model.matrix(~cases_lag2_sum, data = new_dt)  # n_loc x 2
 
-    draws_dt <- as.data.table(t(draws))
-    setnames(draws_dt, paste0("draw_", seq_len(d)))
+  # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
+  loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
+  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
 
-    ids <- data.table(
-      model       = "model_13",
-      location_id = loc,
-      time_id     = max(loc_data$time_id) + w,
-      sigma       = sigma
-    )
-    results_list[[i]] <- cbind(ids, draws_dt)
-  }
+  # Draw beta from multivariate normal (coefficient uncertainty)
+  beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
+  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
 
-  return(rbindlist(results_list))
+  # Predictive draws: d x n_loc -> transpose to n_loc x d
+  fitted_draws <- beta_draws %*% t(X_new)
+  noise        <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
+  pred_mat     <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
+
+  draws_dt <- as.data.table(pred_mat)
+  setnames(draws_dt, paste0("draw_", seq_len(d)))
+
+  ids <- data.table(model       = "model_13",
+                    location_id = new_dt$location_id,
+                    time_id     = new_dt$time_id,
+                    sigma       = sigma)
+
+  return(cbind(ids, draws_dt))
 }

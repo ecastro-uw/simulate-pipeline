@@ -1,81 +1,57 @@
-# Model 30: LME with ARMA(1,1) errors
-# Covariates: None (intercept only)
-# Fixed-effect coefficients estimated globally across all locations.
-# Location-specific random intercepts capture between-location mean differences.
-# ARMA(1,1) error structure captures temporal autocorrelation.
+# Model 39: Exponential Smoothing Model
+# Covariates: None
 
-model_30 <- function(dataset, w, d) {
-
+model_39 <- function(dataset, w, d){
+  
+  # Description of function:
+  # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.
+  # The exponential smoothing model predicts future values by assigning exponentially decreasing
+  # weights to past data. Fit a separate model for each location with automatic selection of 
+  # optimal ETS(E,T,S) family via AIC and BIC.
+  
+  # Make a copy so the original stays unchanged
   dt <- copy(dataset)
-  setorder(dt, location_id, time_id)
-
-  # Fit lme with location random intercepts and global ARMA(1,1) errors
-  fit <- lme(y ~ 1,
-             random      = ~1 | location_id,
-             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id),
-             data        = dt)
-
-  # Extract fixed-effect parameters
-  beta_hat   <- fixef(fit)
-  vcov_beta  <- vcov(fit)
-
-  # Extract ARMA(1,1) parameters
-  params <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
-  phi    <- params[["Phi1"]]
-  theta  <- params[["Theta1"]]
-  sigma  <- fit$sigma
-
-  # Extract location random intercepts
-  re_dt <- data.table(location_id = as.integer(rownames(ranef(fit))),
-                      rand_int    = ranef(fit)[["(Intercept)"]])
-
-  # Compute last innovation per location via ARMA(1,1) filter on conditional
-  # residuals (y - fixed effects - random intercept):
-  # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
-  dt[, cond_resid := residuals(fit)]
-  loc_stats <- dt[, {
-    eps     <- cond_resid
-    n       <- .N
-    eta     <- numeric(n)
-    eta[1L] <- eps[1L]
-    for (j in 2L:n) eta[j] <- eps[j] - phi * eps[j - 1L] - theta * eta[j - 1L]
-    .(last_resid = eps[n], last_eta = eta[n])
-  }, by = location_id]
-
-  # Build forecast data
-  last_time_step <- max(dt$time_id)
-  new_dt <- dt[time_id == last_time_step, .(location_id, time_id)]
-  new_dt[, time_id := last_time_step + w]
-
-  # Design matrix (intercept only)
-  X_new <- model.matrix(~1, data = new_dt)  # n_loc x 1
-
-  # Draw fixed-effect beta from multivariate normal (coefficient uncertainty)
-  beta_draws <- mvrnorm(d, mu = beta_hat, Sigma = vcov_beta)
-  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
-
-  # Fixed-effect component: d x n_loc
-  fitted_draws <- beta_draws %*% t(X_new)
-
-  # Add location random intercepts (point estimates) to each draw
-  rand_int_ord <- re_dt[new_dt[, .(location_id)], on = "location_id"]$rand_int
-  fitted_draws <- sweep(fitted_draws, 2L, rand_int_ord, "+")
-
-  # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
-  loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
-  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
-
-  # Predictive draws: d x n_loc -> transpose to n_loc x d
-  noise    <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
-  pred_mat <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
-
-  draws_dt <- as.data.table(pred_mat)
-  setnames(draws_dt, paste0("draw_", seq_len(d)))
-
-  ids <- data.table(model       = "model_30",
-                    location_id = new_dt$location_id,
-                    time_id     = new_dt$time_id,
-                    sigma       = sigma)
-
-  return(cbind(ids, draws_dt))
+  
+  locations <- unique(dt$location_id)
+  results_list <- vector("list", length(locations))
+  
+  # Fit one model per location
+  for (i in seq_along(locations)){
+    
+    # subset and sort data for current location
+    loc <- locations[i]
+    loc_data <- dt[location_id == loc]
+    setorder(loc_data, time_id)
+    
+    # define time series
+    data_ts <- ts(loc_data$y)
+    
+    # Fit the ETS with automatic model selection
+    # restrict = F allows multiplicative error models
+    tmp_model <- ets(data_ts, restrict = FALSE)
+    
+    # Generate d simulation draws for the w-week-ahead forecast
+    draws <- sapply(seq_len(d), function(x) {
+      sim <- as.numeric(simulate(tmp_model, future = T, nsim = w))
+      sim[w]
+    })
+    
+    # Compute sigma as the RMSE of in-sample resids
+    resids <- residuals(tmp_model)
+    sigma  <- sqrt(mean(resids^2, na.rm=T)) 
+    
+    # Compile the forecasts
+    draws_dt <- as.data.table(t(draws))
+    setnames(draws_dt, paste0("draw_", seq_len(d)))
+    
+    ids <- data.table(
+      model       = "model_39",
+      location_id = loc,
+      time_id     = max(loc_data$time_id) + w,
+      sigma       = sigma
+    )
+    results_list[[i]] <- cbind(ids, draws_dt)
+  }
+  
+  return(rbindlist(results_list))
 }

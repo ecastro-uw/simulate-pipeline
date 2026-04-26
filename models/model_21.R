@@ -1,6 +1,7 @@
-# Model 21: GLS with ARMA(1,1) errors
+# Model 21: LME with ARMA(1,1) errors
 # Covariates: None (intercept only)
-# Coefficients estimated globally across all locations.
+# Fixed-effect coefficients estimated globally across all locations.
+# Location-specific random intercepts capture between-location mean differences.
 # ARMA(1,1) error structure captures temporal autocorrelation.
 
 model_21 <- function(dataset, w, d) {
@@ -8,10 +9,15 @@ model_21 <- function(dataset, w, d) {
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
 
-  # Fit gls with ARMA(1,1) errors, pooled across all locations
-  fit <- gls(y ~ 1,
-             data        = dt,
-             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id))
+  # Fit lme with location random intercepts and global ARMA(1,1) errors
+  fit <- lme(y ~ 1,
+             random      = ~1 | location_id,
+             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id),
+             data        = dt)
+
+  # Extract fixed-effect parameters
+  beta_hat   <- fixef(fit)
+  vcov_beta  <- vcov(fit)
 
   # Extract ARMA(1,1) parameters
   params <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
@@ -19,11 +25,16 @@ model_21 <- function(dataset, w, d) {
   theta  <- params[["Theta1"]]
   sigma  <- fit$sigma
 
-  # Compute last innovation per location via ARMA(1,1) filter:
+  # Extract location random intercepts
+  re_dt <- data.table(location_id = as.integer(rownames(ranef(fit))),
+                      rand_int    = ranef(fit)[["(Intercept)"]])
+
+  # Compute last innovation per location via ARMA(1,1) filter on conditional
+  # residuals (y - fixed effects - random intercept):
   # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
-  dt[, gls_resid := residuals(fit)]
+  dt[, cond_resid := residuals(fit)]
   loc_stats <- dt[, {
-    eps     <- gls_resid
+    eps     <- cond_resid
     n       <- .N
     eta     <- numeric(n)
     eta[1L] <- eps[1L]
@@ -39,18 +50,24 @@ model_21 <- function(dataset, w, d) {
   # Design matrix (intercept only)
   X_new <- model.matrix(~1, data = new_dt)  # n_loc x 1
 
+  # Draw fixed-effect beta from multivariate normal (coefficient uncertainty)
+  beta_draws <- mvrnorm(d, mu = beta_hat, Sigma = vcov_beta)
+  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+
+  # Fixed-effect component: d x n_loc
+  fitted_draws <- beta_draws %*% t(X_new)
+
+  # Add location random intercepts (point estimates) to each draw
+  rand_int_ord <- re_dt[new_dt[, .(location_id)], on = "location_id"]$rand_int
+  fitted_draws <- sweep(fitted_draws, 2L, rand_int_ord, "+")
+
   # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
   loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
   ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
 
-  # Draw beta from multivariate normal (coefficient uncertainty)
-  beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
-  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
-
   # Predictive draws: d x n_loc -> transpose to n_loc x d
-  fitted_draws <- beta_draws %*% t(X_new)
-  noise        <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
-  pred_mat     <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
+  noise    <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
+  pred_mat <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
 
   draws_dt <- as.data.table(pred_mat)
   setnames(draws_dt, paste0("draw_", seq_len(d)))

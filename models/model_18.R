@@ -1,90 +1,71 @@
-# Model 18: auto.arima
-# Covariates: Gym closures (% of days in effect during the previous week)
+# Model 18: GLS with ARMA(1,1) errors
+# Covariates: Gym/pool/leisure closures (% of days in effect during the previous week)
+# Coefficients estimated globally across all locations.
+# ARMA(1,1) error structure captures temporal autocorrelation.
 
 model_18 <- function(dataset, w, d) {
-  
+
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
-  
-  # Lag gym closures
-  dt[, lagged_gym := shift(pct_gym), by=location_id]
-  
-  locations    <- unique(dt$location_id)
-  results_list <- vector("list", length(locations))
-  
-  for (i in seq_along(locations)) {
-    loc      <- locations[i]
-    loc_data <- dt[location_id == loc]
-    setorder(loc_data, time_id)
-    
-    n              <- nrow(loc_data)
-    gym_observed <- loc_data$pct_gym
-    
-    # Remove rows where lagged_gym is NA (first row due to lagging)
-    loc_data_complete <- loc_data[!is.na(lagged_gym)]
-    
-    data_ts    <- ts(loc_data_complete$y)
-    
-    if (length(unique(loc_data_complete$lagged_gym))==1) {
-      # If covariate has no variation, fit without external regressors
-      tmp_model <- auto.arima(data_ts)
-      
-      # Generate d simulation draws for the w-week-ahead forecast.
-      # Each simulate() call draws one stochastic path; we keep only step w.
-      draws <- sapply(seq_len(d), function(x) {
-        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
-        sim[w]
-      })
-    } else {
-      # Otherwise, fit with external regressors
-      xreg_train <- matrix(loc_data_complete$lagged_gym, ncol = 1,
-                           dimnames = list(NULL, "lagged_gym"))
-      tmp_model <- auto.arima(data_ts, xreg = xreg_train)
 
-      # When auto.arima selects a model with drift, it prepends a "drift" column
-      # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
-      has_drift <- !is.null(tmp_model$xreg) && "drift" %in% colnames(tmp_model$xreg)
-      n_train   <- nrow(loc_data_complete)
+  # Lag gym/pool/leisure closures by one week
+  dt[, lagged_gym := shift(pct_gym), by = location_id]
 
-      # Build future xreg for the w forecast steps.
-      # When an index exceeds n, use persistence (last observed value).
-      xreg_future <- matrix(NA_real_, nrow = w, ncol = 1,
-                            dimnames = list(NULL, "lagged_gym"))
-      for (s in seq_len(w)) {
-        idx1 <- n + s - 1
-        val1 <- if (idx1 <= n) gym_observed[idx1] else gym_observed[n]
-        xreg_future[s, 1] <- val1
-      }
+  # Drop rows with NA covariates (first row per location due to lagging)
+  dt_complete <- dt[!is.na(lagged_gym)]
 
-      if (has_drift) {
-        drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
-                               dimnames = list(NULL, "drift"))
-        xreg_future <- cbind(drift_future, xreg_future)
-      }
+  # Fit gls with ARMA(1,1) errors, pooled across all locations
+  fit <- gls(y ~ lagged_gym,
+             data        = dt_complete,
+             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id))
 
-      # Generate d simulation draws for the w-week-ahead forecast.
-      # Each simulate() call draws one stochastic path; we keep only step w.
-      draws <- sapply(seq_len(d), function(x) {
-        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w, xreg = xreg_future))
-        sim[w]
-      })
-    } 
-    
-    # Compute sigma as RMSE of in-sample residuals
-    resids <- residuals(tmp_model)
-    sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
-    
-    draws_dt <- as.data.table(t(draws))
-    setnames(draws_dt, paste0("draw_", seq_len(d)))
-    
-    ids <- data.table(
-      model       = "model_18",
-      location_id = loc,
-      time_id     = max(loc_data$time_id) + w,
-      sigma       = sigma
-    )
-    results_list[[i]] <- cbind(ids, draws_dt)
-  }
-  
-  return(rbindlist(results_list))
+  # Extract ARMA(1,1) parameters
+  params <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
+  phi    <- params[["Phi1"]]
+  theta  <- params[["Theta1"]]
+  sigma  <- fit$sigma
+
+  # Compute last innovation per location via ARMA(1,1) filter:
+  # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
+  dt_complete[, gls_resid := residuals(fit)]
+  loc_stats <- dt_complete[, {
+    eps     <- gls_resid
+    n       <- .N
+    eta     <- numeric(n)
+    eta[1L] <- eps[1L]
+    for (j in 2L:n) eta[j] <- eps[j] - phi * eps[j - 1L] - theta * eta[j - 1L]
+    .(last_resid = eps[n], last_eta = eta[n])
+  }, by = location_id]
+
+  # Build forecast data: lagged_gym at T+1 = pct_gym at T
+  last_time_step <- max(dt$time_id)
+  new_dt <- dt[time_id == last_time_step, .(location_id, time_id, pct_gym)]
+  new_dt[, time_id := last_time_step + w]
+  setnames(new_dt, "pct_gym", "lagged_gym")
+
+  # Design matrix
+  X_new <- model.matrix(~lagged_gym, data = new_dt)  # n_loc x 2
+
+  # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
+  loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
+  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
+
+  # Draw beta from multivariate normal (coefficient uncertainty)
+  beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
+  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+
+  # Predictive draws: d x n_loc -> transpose to n_loc x d
+  fitted_draws <- beta_draws %*% t(X_new)
+  noise        <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
+  pred_mat     <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
+
+  draws_dt <- as.data.table(pred_mat)
+  setnames(draws_dt, paste0("draw_", seq_len(d)))
+
+  ids <- data.table(model       = "model_18",
+                    location_id = new_dt$location_id,
+                    time_id     = new_dt$time_id,
+                    sigma       = sigma)
+
+  return(cbind(ids, draws_dt))
 }

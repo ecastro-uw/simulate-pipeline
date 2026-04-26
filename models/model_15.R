@@ -1,140 +1,77 @@
-# Model 15: auto.arima 
-# Covariates: cases_lag2_sum (sum of cases_pc over previous 2 weeks)
-#             deaths_lag2_sum (sum of deaths_pc over previous 2 weeks)
+# Model 15: GLS with ARMA(1,1) errors
+# Covariates: Cases & Deaths (total reported per 10K pop over last 2 weeks)
+# Coefficients estimated globally across all locations.
+# ARMA(1,1) error structure captures temporal autocorrelation.
 
 model_15 <- function(dataset, w, d) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
 
-  # Compute covariates: var_pc[t-1] + var_pc[t-2] for cases and deaths.
-  dt[, cases_lag2_sum  := frollsum(shift(cases_pc,  1), n = 2, align = "right"), by = location_id]
-  dt[, deaths_lag2_sum := frollsum(shift(deaths_pc, 1), n = 2, align = "right"), by = location_id]
+  # Calculate 2-week rolling sums (excluding current week) for cases and deaths
+  dt[, cases_lag2_sum  := frollsum(shift(cases_pc,  1), n = 2, align = "right"),
+     by = location_id]
+  dt[, deaths_lag2_sum := frollsum(shift(deaths_pc, 1), n = 2, align = "right"),
+     by = location_id]
 
-  locations    <- unique(dt$location_id)
-  results_list <- vector("list", length(locations))
+  # Drop rows with NA covariates (first 2 rows per location due to lagging)
+  dt_complete <- dt[!is.na(cases_lag2_sum) & !is.na(deaths_lag2_sum)]
 
-  for (i in seq_along(locations)) {
-    loc      <- locations[i]
-    loc_data <- dt[location_id == loc]
-    setorder(loc_data, time_id)
+  # Fit gls with ARMA(1,1) errors, pooled across all locations
+  fit <- gls(y ~ cases_lag2_sum + deaths_lag2_sum,
+             data        = dt_complete,
+             correlation = corARMA(p = 1, q = 1, form = ~time_id | location_id))
 
-    n               <- nrow(loc_data)
-    cases_observed  <- loc_data$cases_pc
-    deaths_observed <- loc_data$deaths_pc
+  # Extract ARMA(1,1) parameters
+  params <- coef(fit$modelStruct$corStruct, unconstrained = FALSE)
+  phi    <- params[["Phi1"]]
+  theta  <- params[["Theta1"]]
+  sigma  <- fit$sigma
 
-    # Remove rows where either covariate is NA (first 2 rows due to lagging)
-    loc_data_complete <- loc_data[!is.na(cases_lag2_sum) & !is.na(deaths_lag2_sum)]
+  # Compute last innovation per location via ARMA(1,1) filter:
+  # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
+  dt_complete[, gls_resid := residuals(fit)]
+  loc_stats <- dt_complete[, {
+    eps     <- gls_resid
+    n       <- .N
+    eta     <- numeric(n)
+    eta[1L] <- eps[1L]
+    for (j in 2L:n) eta[j] <- eps[j] - phi * eps[j - 1L] - theta * eta[j - 1L]
+    .(last_resid = eps[n], last_eta = eta[n])
+  }, by = location_id]
 
-    # Only include regressors that have variation; a constant (e.g. all-zero)
-    # regressor causes auto.arima to fail.
-    use_cases  <- length(unique(loc_data_complete$cases_lag2_sum))  > 1
-    use_deaths <- length(unique(loc_data_complete$deaths_lag2_sum)) > 1
-    xreg_cols  <- c(
-      if (use_cases)  "cases_lag2_sum",
-      if (use_deaths) "deaths_lag2_sum"
-    )
+  # Build forecast data
+  last_time_step <- max(dt$time_id)
+  last_two <- dt[time_id %in% c(last_time_step - 1L, last_time_step),
+                 .(location_id, time_id, cases_pc, deaths_pc)]
+  new_dt <- last_two[, .(time_id         = last_time_step + w,
+                         cases_lag2_sum  = sum(cases_pc),
+                         deaths_lag2_sum = sum(deaths_pc)),
+                     by = location_id]
 
-    data_ts <- ts(loc_data_complete$y)
+  # Design matrix
+  X_new <- model.matrix(~cases_lag2_sum + deaths_lag2_sum, data = new_dt)  # n_loc x 3
 
-    if (length(xreg_cols) > 0) {
-      xreg_train <- as.matrix(loc_data_complete[, xreg_cols, with = FALSE])
-      # Drop linearly dependent columns; a rank-deficient xreg causes a
-      # singular Hessian in auto.arima even when each column has variation.
-      qr_decomp <- qr(xreg_train)
-      if (qr_decomp$rank < ncol(xreg_train)) {
-        keep       <- qr_decomp$pivot[seq_len(qr_decomp$rank)]
-        xreg_cols  <- xreg_cols[keep]
-        xreg_train <- xreg_train[, keep, drop = FALSE]
-        use_cases  <- "cases_lag2_sum"  %in% xreg_cols
-        use_deaths <- "deaths_lag2_sum" %in% xreg_cols
-      }
-    }
+  # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
+  loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
+  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
 
-    if (length(xreg_cols) > 0) {
-      # Singularity can still occur with very few observations relative to the
-      # ARIMA order chosen (e.g. 4 obs, d=1, 2 regressors → 3 effective rows
-      # for 3 parameters). Fall back to univariate in that case.
-      fell_back <- FALSE
-      tmp_model <- tryCatch(
-        auto.arima(data_ts, xreg = xreg_train),
-        error = function(e) {
-          if (grepl("singular", conditionMessage(e), ignore.case = TRUE)) {
-            fell_back <<- TRUE
-            auto.arima(data_ts)
-          } else {
-            stop(e)
-          }
-        }
-      )
-      if (fell_back) {
-        xreg_cols  <- character(0)
-        xreg_train <- NULL
-        use_cases  <- FALSE
-        use_deaths <- FALSE
-      }
-    } else {
-      xreg_train <- NULL
-      tmp_model  <- auto.arima(data_ts)
-    }
+  # Draw beta from multivariate normal (coefficient uncertainty)
+  beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
+  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
 
-    # When auto.arima selects a model with drift, it prepends a "drift" column
-    # (1:nobs) to xreg internally. We must continue that trend in xreg_future.
-    has_drift <- !is.null(tmp_model$xreg) && "drift" %in% colnames(tmp_model$xreg)
-    n_train   <- nrow(loc_data_complete)
+  # Predictive draws: d x n_loc -> transpose to n_loc x d
+  fitted_draws <- beta_draws %*% t(X_new)
+  noise        <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
+  pred_mat     <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
 
-    # Build future xreg for the w forecast steps.
-    # For each variable: lag2_sum at horizon s = var_pc[n+s-1] + var_pc[n+s-2].
-    # When an index exceeds n, use persistence (last observed value).
-    if (length(xreg_cols) > 0) {
-      xreg_future <- matrix(NA_real_, nrow = w, ncol = length(xreg_cols),
-                            dimnames = list(NULL, xreg_cols))
-      for (s in seq_len(w)) {
-        idx1 <- n + s - 1
-        idx2 <- n + s - 2
-        if (use_cases) {
-          cases_val1 <- if (idx1 <= n) cases_observed[idx1] else cases_observed[n]
-          cases_val2 <- if (idx2 <= n) cases_observed[idx2] else cases_observed[n]
-          xreg_future[s, "cases_lag2_sum"] <- cases_val1 + cases_val2
-        }
-        if (use_deaths) {
-          deaths_val1 <- if (idx1 <= n) deaths_observed[idx1] else deaths_observed[n]
-          deaths_val2 <- if (idx2 <= n) deaths_observed[idx2] else deaths_observed[n]
-          xreg_future[s, "deaths_lag2_sum"] <- deaths_val1 + deaths_val2
-        }
-      }
-    } else {
-      xreg_future <- NULL
-    }
+  draws_dt <- as.data.table(pred_mat)
+  setnames(draws_dt, paste0("draw_", seq_len(d)))
 
-    if (has_drift) {
-      drift_future <- matrix(seq(n_train + 1, n_train + w), nrow = w, ncol = 1,
-                             dimnames = list(NULL, "drift"))
-      xreg_future <- if (!is.null(xreg_future)) cbind(drift_future, xreg_future) else drift_future
-    }
+  ids <- data.table(model       = "model_15",
+                    location_id = new_dt$location_id,
+                    time_id     = new_dt$time_id,
+                    sigma       = sigma)
 
-    # Generate d simulation draws for the w-week-ahead forecast.
-    # Each simulate() call draws one stochastic path; we keep only step w.
-    draws <- sapply(seq_len(d), function(x) {
-      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w, xreg = xreg_future))
-      sim[w]
-    })
-
-    # Compute sigma as RMSE of in-sample residuals
-    resids <- residuals(tmp_model)
-    sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
-
-    draws_dt <- as.data.table(t(draws))
-    setnames(draws_dt, paste0("draw_", seq_len(d)))
-
-    ids <- data.table(
-      model       = "model_15",
-      location_id = loc,
-      time_id     = max(loc_data$time_id) + w,
-      sigma       = sigma
-    )
-    results_list[[i]] <- cbind(ids, draws_dt)
-  }
-
-  return(rbindlist(results_list))
+  return(cbind(ids, draws_dt))
 }
