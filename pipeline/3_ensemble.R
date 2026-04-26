@@ -81,8 +81,8 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
   # Second ensemble: optimize weights on time_id %in% c(-3, -2)
   run2 <- run_one_ensemble(preds_dt[time_id %in% c(-3,-2)])
 
-  return(list(unadj_results  = run1$result,
+  return(list(unadj_results  = run1$result[time_id>-3],
               weights        = run1$weights_dt,
               fit_stats      = run1$fit_stats_dt,
-              unadj_results2 = run2$result))
+              unadj_results2 = run2$result[time_id<0]))
 }

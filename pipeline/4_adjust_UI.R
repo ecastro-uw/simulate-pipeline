@@ -7,7 +7,7 @@ adjust_UI <- function(data, results_draws, unadj_results2, configs){
   # Step 1: summarize draws from the pre-event period (mean, LL, UL, observed values)
   
   # add observed values
-  results_draws <- merge(results_draws, data, by=c('location_id', 'time_id'))
+  results_draws <- merge(results_draws, data[, .(location_id, time_id, y)], by=c('location_id', 'time_id'))
   
   # subset to pre-event period
   dt_summary <- results_draws[time_id < 0]
@@ -104,7 +104,7 @@ adjust_UI <- function(data, results_draws, unadj_results2, configs){
   multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
 
   # Step 4b: Find second multiplier calibrated on unadj_results2 (time_id %in% c(-3,-2))
-  dt_summary2 <- merge(unadj_results2[time_id %in% c(-3,-2)], data, by=c('location_id', 'time_id'))
+  dt_summary2 <- merge(unadj_results2[time_id < -1], data[, .(location_id, time_id, y)], by=c('location_id', 'time_id'))
   dt_summary2[, `:=`(mean = rowMeans(.SD),
                      LL = apply(.SD, 1, quantile, 0.025),
                      UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
@@ -120,7 +120,7 @@ adjust_UI <- function(data, results_draws, unadj_results2, configs){
   draws_adj$p_val <- rowSums(draws_adj[, lapply(.SD, function(x) x <= y), .SDcols = draw_cols])/n_draws
 
   # Step 7: Apply multiplier2 to draws at time_id = -1, summarize to quantiles
-  dt_m1 <- results_draws[time_id == -1]
+  dt_m1 <- unadj_results2[time_id == -1]
   dt_m1[, mean := rowMeans(.SD), .SDcols = draw_cols]
   draws_adj2 <- dt_m1[, lapply(.SD, function(x) mean + ((x - mean) * multiplier2)), .SDcols = draw_cols]
   draws_adj2 <- cbind(dt_m1[, .(location_id, time_id)], draws_adj2)

@@ -22,7 +22,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0425'     # For distinguishing output file names
+suffix    <- 'inv1_0425_v2'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -38,8 +38,8 @@ pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise 
 min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
 padding          <- 2       # Waiting period after first lift
 max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
-min_train_wks    <- 6       # Minimum training window length for first impositions (weeks)
-min_train_flex   <- 2       # Flexibility window around minimum for second impositions (weeks)
+min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
+min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
 #mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
 #mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
 #epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible

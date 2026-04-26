@@ -10,7 +10,6 @@ make_predictions <- function(data, pipeline_inputs){
   d <- configs$d
   spread <- 4 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
   
-  results <- vector("list", )
   # Use each model to forecast the desired number of time steps
   pred_all <- function(mod, dt, spread, w, d){
     model <- get(mod)
