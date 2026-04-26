@@ -34,6 +34,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   ensemble_start <- Sys.time()
   ensemble_out_list <- ensemble(data, preds_by_model, pipeline_inputs)
   unadj_results <- ensemble_out_list$unadj_results
+  unadj_results2 <- ensemble_out_list$unadj_results2
   weights_dt <- ensemble_out_list$weights
   fit_stats_dt <- ensemble_out_list$fit_stats
   ensemble_end <- Sys.time()
@@ -41,7 +42,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   
   # (4) Adjust the UI
   adjust_start <- Sys.time()
-  adjusted_results <- adjust_UI(data, unadj_results, configs)
+  adjusted_results <- adjust_UI(data, unadj_results, unadj_results2, configs)
   final_results <- adjusted_results$final_results
   wis_results <- adjusted_results$final_results2
   adjust_end <- Sys.time()

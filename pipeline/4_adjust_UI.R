@@ -1,5 +1,5 @@
 # Adjust the UI
-adjust_UI <- function(data, results_draws, configs){
+adjust_UI <- function(data, results_draws, unadj_results2, configs){
   
   # define some parameters
   n_draws <- configs$d #number of draws
@@ -103,8 +103,8 @@ adjust_UI <- function(data, results_draws, configs){
 
   multiplier <- bisect_for_coverage(dt_summary, target_cov = 0.95)
 
-  # Step 4b: Find second multiplier calibrated on time_id < -1 (for WIS)
-  dt_summary2 <- results_draws[time_id < -1]
+  # Step 4b: Find second multiplier calibrated on unadj_results2 (time_id %in% c(-3,-2))
+  dt_summary2 <- merge(unadj_results2[time_id %in% c(-3,-2)], data, by=c('location_id', 'time_id'))
   dt_summary2[, `:=`(mean = rowMeans(.SD),
                      LL = apply(.SD, 1, quantile, 0.025),
                      UL = apply(.SD, 1, quantile, 0.975)), .SDcols = draw_cols]
