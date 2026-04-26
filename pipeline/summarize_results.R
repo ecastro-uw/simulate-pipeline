@@ -226,7 +226,7 @@ wide <- dcast(all_weights, context ~ model, value.var = "weight", fill = 0)
 long <- melt(wide, id.vars = "context", variable.name = "model", value.name = "weight")
 
 # Order models numerically (model_1, model_2, ..., model_20)
-long[, model := factor(model, levels = paste0("model_", 1:20))]
+long[, model := factor(model, levels = paste0("model_", c(1:11,21:38)))]
 
 # rank models
 long[, rank := frankv(weight, order = -1L), by = context]
