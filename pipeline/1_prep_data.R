@@ -189,6 +189,38 @@ prep_data <- function(pipeline_inputs){
     dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
                  pct_edu, pct_gathering, pct_gym, pct_retail,
                  pct_sah, pct_dining, pct_bar)]
+
+    # Append two lag-padding weeks so that the 2-week lagged covariate terms
+    # (e.g. cases_lag2_sum = cases_pc[t-1] + cases_pc[t-2]) are defined for
+    # every actual training observation. Padding rows have y = NA and are
+    # naturally excluded by each model's !is.na(cases_lag2_sum) filter.
+    lag_pad_wks <- 2L
+    train_start_per_loc <- outcome_dt[
+      , .(train_start = min(date), onset_date = unique(onset_date)),
+      by = location_id
+    ][location_id %in% dt$location_id]
+
+    covid_pad <- merge(
+      covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
+      train_start_per_loc, by = 'location_id'
+    )
+    covid_pad <- covid_pad[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
+    covid_pad[, time_id := as.numeric(floor((date - onset_date) / 7))]
+
+    pad_weekly <- covid_pad[, .(
+      y         = NA_real_,
+      cases_pc  = sum(daily_cases) / unique(pop) * 10000,
+      deaths_pc = sum(daily_deaths) / unique(pop) * 10000,
+      pct_edu      = NA_real_,
+      pct_gathering = NA_real_,
+      pct_gym      = NA_real_,
+      pct_retail   = NA_real_,
+      pct_sah      = NA_real_,
+      pct_dining   = NA_real_,
+      pct_bar      = NA_real_
+    ), by = c('location_id', 'time_id')]
+
+    dt <- rbind(dt, pad_weekly)
   }
   
   # Save out the problem log
