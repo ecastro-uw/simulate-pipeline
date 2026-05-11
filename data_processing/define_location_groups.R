@@ -22,7 +22,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0425_v2'     # For distinguishing output file names
+suffix    <- 'inv1_0510'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -229,7 +229,9 @@ check_mandates <- function(context) {
 
   min_train_dt <- merge(mandates, one_context[, .(location_id, start_date, end_date, onset_date)],
                         by = 'location_id')
-  min_train_dt <- min_train_dt[date >= start_date & date <= end_date]
+  
+  # Subset the data. Grab an extra week to account for the lag
+  min_train_dt <- min_train_dt[date >= (start_date - 7) & date <= end_date]
   min_train_dt[, time_id := as.numeric(floor((date - onset_date) / 7))]
 
   col_names <- c('pct_edu', 'pct_gathering', 'pct_gym', 'pct_retail', 'pct_sah', 'pct_dining', 'pct_bar')
@@ -281,7 +283,9 @@ check_cases_deaths <- function(context) {
 
   min_train_dt <- merge(cases_dt, one_context[, .(location_id, start_date, end_date, onset_date)],
                         by = 'location_id')
-  min_train_dt <- min_train_dt[date >= start_date & date <= end_date]
+  
+  # subset the data. grab an extra 2 weeks to calculate the 2 week rolling sum
+  min_train_dt <- min_train_dt[date >= (start_date - 14) & date <= end_date]
   min_train_dt[, time_id := as.numeric(floor((date - onset_date) / 7))]
 
   weekly_dt <- min_train_dt[, .(cases  = sum(daily_cases),
@@ -293,7 +297,7 @@ check_cases_deaths <- function(context) {
   weekly_dt[, deaths_lag2_sum := frollsum(shift(deaths, 1), n = 2, align = "right"), by = location_id]
   weekly_dt <- weekly_dt[! is.na(cases_lag2_sum)]
 
-  # # of location-weeks with non-zero values must exceed 5
+  # number of location-weeks with non-zero values must exceed 5
   data.table(
     context_id = context,
     cases = ifelse(sum(weekly_dt$cases_lag2_sum > 0) >5, 1, 0),
@@ -364,28 +368,28 @@ context_lookup[, `:=`(
   model_10  = ifelse(bar == 1, 1, 0),                                               # OLS: lagged y + bar
   model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # OLS: lagged y + sum of mandates
   # GLS with ARMA(1,1) errors
-  model_21 = 1,                                                                     # GLS: 1
-  model_22 = ifelse(cases == 1, 1, 0),                                              # GLS: cases
-  model_23 = ifelse(deaths == 1, 1, 0),                                             # GLS: deaths
-  model_24 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # GLS: cases + deaths
-  model_25 = ifelse(edu == 1, 1, 0),                                                # GLS: schools
-  model_26 = ifelse(gathering == 1, 1, 0),                                          # GLS: gatherings
-  model_27 = ifelse(gym == 1, 1, 0),                                                # GLS: gym
-  model_28 = ifelse(bar == 1, 1, 0),                                                # GLS: bar
-  model_29 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # GLS: sum of mandates
+  model_12 = 1,                                                                     # GLS: 1
+  model_13 = ifelse(cases == 1, 1, 0),                                              # GLS: cases
+  model_14 = ifelse(deaths == 1, 1, 0),                                             # GLS: deaths
+  model_15 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # GLS: cases + deaths
+  model_16 = ifelse(edu == 1, 1, 0),                                                # GLS: schools
+  model_17 = ifelse(gathering == 1, 1, 0),                                          # GLS: gatherings
+  model_18 = ifelse(gym == 1, 1, 0),                                                # GLS: gym
+  model_19 = ifelse(bar == 1, 1, 0),                                                # GLS: bar
+  model_20 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # GLS: sum of mandates
   # LME with location random intercepts and ARMA(1,1) errors
-  model_30 = 1,                                                                     # LME: (1|location)
-  model_31 = ifelse(cases == 1, 1, 0),                                              # LME: cases
-  model_32 = ifelse(deaths == 1, 1, 0),                                             # LME: deaths
-  model_33 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # LME: cases + deaths
-  model_34 = ifelse(edu == 1, 1, 0),                                                # LME: schools
-  model_35 = ifelse(gathering == 1, 1, 0),                                          # LME: gatherings
-  model_36 = ifelse(gym == 1, 1, 0),                                                # LME: gym
-  model_37 = ifelse(bar == 1, 1, 0),                                                # LME: bar
-  model_38 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # LME: sum of mandates
+  model_21 = 1,                                                                     # LME: (1|location)
+  model_22 = ifelse(cases == 1, 1, 0),                                              # LME: cases
+  model_23 = ifelse(deaths == 1, 1, 0),                                             # LME: deaths
+  model_24 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # LME: cases + deaths
+  model_25 = ifelse(edu == 1, 1, 0),                                                # LME: schools
+  model_26 = ifelse(gathering == 1, 1, 0),                                          # LME: gatherings
+  model_27 = ifelse(gym == 1, 1, 0),                                                # LME: gym
+  model_28 = ifelse(bar == 1, 1, 0),                                                # LME: bar
+  model_29 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # LME: sum of mandates
   # Miscellaneous
-  model_39 = 0,                                                                     # exponential smoothing
-  model_40 = 0                                                                      # neural network
+  model_30 = 1,                                                                     # exponential smoothing
+  model_31 = 0                                                                      # neural network
 )]
 
 
@@ -393,7 +397,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:11), paste0('model_', 21:40))
+                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:31))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 

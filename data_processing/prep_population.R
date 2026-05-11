@@ -9,6 +9,8 @@ source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 # define dirs
 input_path <- "/ihme/scratch/users/ems2285/thesis/inputs/data/census_county_est2023_alldata.csv"
 out_path <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/population.csv'
+out_path2 <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_states/population.csv'
+out_path3 <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/Brazil_states/population.csv'
 
 # load the location hierarchy
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
@@ -48,4 +50,38 @@ missing_locs <- counties[location_id %in% setdiff(counties$location_id, test$loc
 
 # Output
 county_pop_file <- test[, .(location_id, state, county, pop)]
-fwrite(county_pop_file, paste0(out_path))
+fwrite(county_pop_file, out_path)
+
+
+
+# US STATES
+source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
+source("/ihme/cc_resources/libraries/current/r/get_population.R")
+
+hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
+us_state_loc_ids <- hierarchy[level==2]$location_id
+
+us_states <- get_population(
+  release_id = 9,
+  age_group_id = 22,
+  location_id = us_state_loc_ids,
+  year_id = 2020,
+  sex_id = 3
+)
+us_state_pop_file <- us_states[, .(location_id, pop = population)]
+fwrite(us_state_pop_file, out_path2)
+
+
+# BRAZIL STATES
+hierarchy <- get_location_metadata(location_set_id = 35, release_id = 9)
+br_state_loc_ids <- hierarchy[level==4 & parent_id==135]$location_id
+
+br_states <- get_population(
+  release_id = 9,
+  age_group_id = 22,
+  location_id = br_state_loc_ids,
+  year_id = 2020,
+  sex_id = 3
+)
+br_state_pop_file <- br_states[, .(location_id, pop = population)]
+fwrite(br_state_pop_file, out_path3)

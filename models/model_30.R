@@ -1,7 +1,7 @@
-# Model 39: Exponential Smoothing Model
+# Model 30: Exponential Smoothing Model
 # Covariates: None
 
-model_39 <- function(dataset, w, d){
+model_30 <- function(dataset, w, d){
   
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.
@@ -45,7 +45,7 @@ model_39 <- function(dataset, w, d){
     setnames(draws_dt, paste0("draw_", seq_len(d)))
     
     ids <- data.table(
-      model       = "model_39",
+      model       = "model_30",
       location_id = loc,
       time_id     = max(loc_data$time_id) + w,
       sigma       = sigma

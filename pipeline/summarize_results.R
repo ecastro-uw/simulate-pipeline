@@ -14,15 +14,23 @@ library(scoringutils, lib.loc = '/ihme/homes/ems2285/lib_for_scoringutils')
 library(data.table)
 library(ggplot2)
 library(dplyr)
+source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260418.01'
+version_id <- '20260426.01'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
 
 # load context lookup file
 context_lookup <- fread(file.path(root_dir,'inputs/context_lookup_table.csv'))
+
+# Load the location hierarchy
+hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
+counties <- merge(hierarchy[level==3, .(parent_id, location_id, location_name)],
+      hierarchy[level==2, .(location_id, state = location_name, state_abbrev = gsub('US-','',local_id))],
+      by.x='parent_id', by.y='location_id')
+counties[, full_name := paste0(location_name, ', ', state_abbrev)]
 
 ### PART 1 - MODEL PERFORMANCE MEASURES ###
 
@@ -56,7 +64,7 @@ calc_wis <- function(context, model){
   return(scores)
 }
 
-# Calculate forecast skill (skill = 1 - (wis_ens/wis_naive))
+# Calculate forecast skill (skill = 1 - (wis/wis_baseline))
 calc_skill <- function(context, adj=TRUE){
   if (adj==TRUE){
     numerator <- sum(calc_wis(context, model='adj_ensemble'))
@@ -84,6 +92,7 @@ performance_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type,
 
 # Save table
 fwrite(performance_dt, paste0(root_dir,'/model_performance_summary.csv'))
+
 
 
 # Compile other measures of model performance (not currently output)
@@ -157,7 +166,14 @@ effect_size_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type,
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
-### (B) Make a forest plot
+### (B) Meta-regression
+fit <- lm(eff_size_median ~ mandate_type + mandate_num + pop_cat + pol_cat, data=effect_size_dt)
+summary(fit)
+ggplot(effect_size_dt, aes(x=pol_cat, y=eff_size_median, color=mandate_type, shape=mandate_num)) +
+  geom_point(size=2) +
+  theme_classic()
+
+### (C) Make a forest plot
 
 # Update the context ids within each event type so the intervals line up vertically
 # in the final plot
@@ -183,7 +199,7 @@ p1 <- ggplot(plot_dt, aes(x = context_new, y = eff_size_median, ymin = eff_size_
     labels = c("big" = "100K+", "small" = "<100K")
   ) +
   scale_x_discrete(name = "", labels = NULL) +
-  scale_y_continuous(name = "Log Ratio") +
+  scale_y_continuous(name = "Effect Size") +
   coord_flip() +
   facet_grid(mandate_num ~ mandate_type, labeller = labeller(
     mandate_num = c("first" = "First", "second" = "Second"),
@@ -207,7 +223,11 @@ dev.off()
 
 ### PART 2 - VETTING PLOTS ###
 
-### (A) Ensemble weight heat map
+### (A) Check that models converged
+fit_files <- list.files(file.path(root_dir, 'batched_output'), pattern = 'ens_fit_stats', full.names=T)
+dt_all <- rbindlist(lapply(fit_files, function(x) fread(x)))
+
+### (B) Ensemble weight heat map
 
 # Read and combine all 24 files
 all_weights <- rbindlist(
@@ -226,14 +246,15 @@ wide <- dcast(all_weights, context ~ model, value.var = "weight", fill = 0)
 long <- melt(wide, id.vars = "context", variable.name = "model", value.name = "weight")
 
 # Order models numerically (model_1, model_2, ..., model_20)
-long[, model := factor(model, levels = paste0("model_", c(1:11,21:38)))]
+long[, model_num := factor(gsub('model_', '',model), levels = 1:30)]
+#long[, model := factor(model, levels = paste0("model_", 1:30))]
 
 # rank models
 long[, rank := frankv(weight, order = -1L), by = context]
 
 
 # Plot
-ggplot(long, aes(x = model, y = factor(context), fill = weight)) +
+p2 <- ggplot(long, aes(x = model_num, y = factor(context), fill = weight)) +
   geom_tile(color = "white", linewidth = 0.3) +
   geom_text(data = long[rank <= 3],
             aes(label=rank), size=3, fontface="bold") +
@@ -254,3 +275,112 @@ ggplot(long, aes(x = model, y = factor(context), fill = weight)) +
     axis.text.x  = element_text(angle = 45, hjust = 1),
     panel.grid   = element_blank()
   )
+
+pdf(paste0(root_dir,'/ens_weight_heat_map.pdf'), width=8, height=5)
+p2
+dev.off()
+
+
+### (C) Time series plots by location
+plot_timeseries <- function(context, model_name='ensemble', save_pdf = FALSE){
+  obs_dt <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[, .(location_id, time_id, y)]
+  if (model_name == 'ensemble') {
+    pred_dt <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))
+  } else {
+    pred_dt <- fread(paste0(root_dir,'/batched_output/candidate_mods_context_',context,'.csv'))[model==model_name,
+                     .(location_id, time_id, q50, q2.5, q97.5)]
+  }
+  # combine observed time series and prediction intervals
+  plot_dt <- merge(obs_dt, pred_dt[,.(location_id, time_id, median = q50, LL = q2.5, UL = q97.5)], 
+                   by=c('location_id', 'time_id'), all.x=T)
+  
+  # add location names
+  plot_dt <- merge(plot_dt, counties[,.(location_id, full_name, state)], by='location_id', all.x=T)
+  
+  # define the plot
+  make_plot <- function(dt) {
+    ggplot(dt) +
+      geom_point(aes(x=time_id, y=y)) +
+      geom_line(aes(x=time_id, y=y)) +
+      geom_errorbar(aes(x=time_id, y=median, ymin=LL, ymax=UL), width=0.4, color='red') +
+      geom_point(data=dt[!is.na(median)], aes(x=time_id, y=median), color='red', pch=2) + 
+      #geom_errorbar(data=plot_dt[time_id==0], aes(x=time_id, y=mean, ymin=LL, ymax=UL), width=0.4, color='red') +
+      theme_classic() +
+      facet_wrap(~full_name)
+  }
+  
+  # build a list of plots
+  plots <- if (length(unique(plot_dt$full_name)) <= 10) {
+    # all plots on same page
+    list(make_plot(plot_dt))
+  } else {
+    # one plot per state
+    lapply(unique(plot_dt$state), function(st) make_plot(plot_dt[state == st]))
+  }
+  
+  # Either save to PDF or print to console
+  if (save_pdf) {
+    path <- paste0(root_dir,'/timeseries_obs_vs_',model_name,'_context_',context,'.pdf')
+    pdf(path)
+    lapply(plots, print)
+    dev.off()
+    message("Saved to", path)
+  } else {
+    lapply(plots, print)
+  }
+  invisible(plots)
+}
+
+
+# Does the ensemble fit well for first restaurant impositions?
+# In instances with early outbreaks: yes because cases are a decent
+# predictor. Otherwise, not really as it tends to miss the pre-emptive drop off
+# in mobility occuring 1-2 weeks ahead of the mandate
+
+# Could try stratifying counties based upon case load/onset of outbreak?
+
+# big dem
+plot_timeseries(context = 1,
+                model_name = "ensemble",
+                save_pdf = F)
+# big mod
+plot_timeseries(context = 4,
+                model_name = "ensemble",
+                save_pdf = F)
+
+# how about first bar mandates?
+# big dem
+plot_timeseries(context = 13,
+                model_name = "ensemble",
+                save_pdf = F)
+
+
+
+plot_timeseries(context = 1,
+                model_name = "model_4",
+                save_pdf = T)
+plot_timeseries(context = 1,
+                model_name = "model_12",
+                save_pdf = T)
+plot_timeseries(context = 7,
+                model_name = "model_30",
+                save_pdf = T)
+
+
+plot_timeseries(context = 7,
+                model_name = "ensemble",
+                save_pdf = F)
+plot_timeseries(context = 8,
+                model_name = "ensemble",
+                save_pdf = F)
+plot_timeseries(context = 9,
+                model_name = "ensemble",
+                save_pdf = F)
+plot_timeseries(context = 10,
+                model_name = "ensemble",
+                save_pdf = F)
+
+
+plot_timeseries(context = 1,
+                model_name = "ensemble",
+                save_pdf = F)
