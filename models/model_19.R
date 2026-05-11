@@ -12,7 +12,7 @@ model_19 <- function(dataset, w, d) {
   dt[, lagged_bar := shift(pct_bar), by = location_id]
 
   # Drop rows with NA covariates (first row per location due to lagging)
-  dt_complete <- dt[!is.na(lagged_bar)]
+  dt_complete <- dt[!is.na(lagged_bar) & !is.na(y)]
 
   # Fit gls with ARMA(1,1) errors, pooled across all locations
   fit <- gls(y ~ lagged_bar,

@@ -7,6 +7,7 @@ model_12 <- function(dataset, w, d) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
+  dt <- dt[!is.na(y)]
 
   # Fit gls with ARMA(1,1) errors, pooled across all locations
   fit <- gls(y ~ 1,
