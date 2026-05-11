@@ -55,6 +55,20 @@ elect_dt[, pct := votes / total_votes]
 elect_wide <- dcast(elect_dt, location_id ~ party, value.var = 'pct')
 elect_wide[, pol_cat := ifelse(DEMOCRAT > pol_threshold, 'D', ifelse(REPUBLICAN > pol_threshold, 'R', 'M'))]
 
+# Helper: add per-location training window dates to a context subset (modifies in place)
+add_train_window <- function(dt, mandate_num) {
+  if (mandate_num == 'first') {
+    dt[, start_date := onset_date - max_train_wks * 7L]
+    dt[, end_date   := start_date + min_train_wks * 7L - 1L]
+  } else {
+    dt[, max_train_length := int_wks - padding]
+    dt[, min_train_length := max_train_length - min_train_flex]
+    dt[, start_date       := onset_date - max_train_length * 7L]
+    dt[, end_date         := start_date + min_train_length * 7L - 1L]
+  }
+  dt
+}
+
 
 ### (2) CREATE CONTEXT GROUPS ###
 
@@ -184,6 +198,49 @@ for (event in event_list) {
   all_contexts       <- rbind(all_contexts, context_map, fill = TRUE)
 }
 
+# Drop locations with missing case or death data from all_contexts before assigning context IDs
+cases_dt <- fread(paste0(input_root, 'covid_cases_deaths.csv'))
+
+for (event_name in event_list) {
+  one_event   <- all_contexts[event == event_name]
+  mandate_num <- ifelse(substr(event_name, 1, 5) == 'first', 'first', 'second')
+  one_event_w <- add_train_window(copy(one_event), mandate_num)
+
+  # Locations absent from cases_dt entirely
+  absent <- setdiff(one_event_w$location_id, cases_dt$location_id)
+  if (length(absent) > 0) {
+    drop_log[[paste0(event_name, '__missing_cases_deaths')]] <- data.table(
+      location_id = absent, event = event_name, reason = 'missing_cases_deaths_data'
+    )
+    all_contexts <- all_contexts[!(event == event_name & location_id %in% absent)]
+    one_event_w  <- one_event_w[!location_id %in% absent]
+  }
+
+  # For present locations, check for all-NA within the training window
+  present_dt <- merge(cases_dt,
+                      one_event_w[, .(location_id, start_date, end_date)],
+                      by = 'location_id')
+  present_dt <- present_dt[date >= start_date & date <= end_date]
+
+  na_cases  <- present_dt[, all(is.na(daily_cases)),  by = location_id][V1 == TRUE, location_id]
+  na_deaths <- present_dt[, all(is.na(daily_deaths)), by = location_id][V1 == TRUE, location_id]
+  locs_to_drop <- unique(c(na_cases, na_deaths))
+
+  if (length(na_cases) > 0) {
+    drop_log[[paste0(event_name, '__na_cases')]] <- data.table(
+      location_id = na_cases, event = event_name, reason = 'missing_cases'
+    )
+  }
+  if (length(na_deaths) > 0) {
+    drop_log[[paste0(event_name, '__na_deaths')]] <- data.table(
+      location_id = na_deaths, event = event_name, reason = 'missing_deaths'
+    )
+  }
+  if (length(locs_to_drop) > 0) {
+    all_contexts <- all_contexts[!(event == event_name & location_id %in% locs_to_drop)]
+  }
+}
+
 
 # Ensure proper sorting before assigning context ids
 all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar'))]
@@ -204,20 +261,6 @@ context_guide[, outcome := paste0('visits to ', mandate_type, 's')]
 
 
 ### (3) DEFINE WHICH MODELS TO RUN FOR EACH CONTEXT ###
-
-# Helper: add per-location training window dates to a context subset (modifies in place)
-add_train_window <- function(dt, mandate_num) {
-  if (mandate_num == 'first') {
-    dt[, start_date := onset_date - max_train_wks * 7L]
-    dt[, end_date   := start_date + min_train_wks * 7L - 1L]
-  } else {
-    dt[, max_train_length := int_wks - padding]
-    dt[, min_train_length := max_train_length - min_train_flex]
-    dt[, start_date       := onset_date - max_train_length * 7L]
-    dt[, end_date         := start_date + min_train_length * 7L - 1L]
-  }
-  dt
-}
 
 # 3(A) Check which mandate covariates meet the inclusion criteria for each context
 mandates <- fread(paste0(input_root, 'other_mandate_time_series.csv'))
@@ -274,8 +317,6 @@ mandate_covars[grepl("restaurant", event), dining := 0]
 mandate_covars[grepl("bar",        event), bar    := 0]
 
 # 3(B) Check if case and death data meet the covariate inclusion criteria for each context
-cases_dt <- fread(paste0(input_root, 'covid_cases_deaths.csv'))
-
 check_cases_deaths <- function(context) {
   one_context <- all_contexts[context_id == context]
   mandate_num <- ifelse(substr(unique(one_context$event), 1, 5) == 'first', 'first', 'second')
@@ -309,41 +350,6 @@ check_cases_deaths <- function(context) {
 
 epi_covars     <- rbindlist(lapply(unique(context_guide$context_id), check_cases_deaths))
 context_lookup <- merge(mandate_covars, epi_covars, by = 'context_id')
-
-# 3(B continued) Document locations with missing cases or deaths data
-for (event_name in event_list) {
-  one_event   <- all_contexts[event == event_name]
-  mandate_num <- ifelse(substr(event_name, 1, 5) == 'first', 'first', 'second')
-  one_event_w <- add_train_window(copy(one_event), mandate_num)
-
-  # Locations absent from cases_dt entirely
-  absent <- setdiff(one_event_w$location_id, cases_dt$location_id)
-  if (length(absent) > 0) {
-    drop_log[[paste0(event_name, '__missing_cases_deaths')]] <- data.table(
-      location_id = absent, event = event_name, reason = 'missing_cases_deaths_data'
-    )
-  }
-
-  # For present locations, check for all-NA within the training window
-  present_dt <- merge(cases_dt,
-                      one_event_w[!location_id %in% absent, .(location_id, start_date, end_date)],
-                      by = 'location_id')
-  present_dt <- present_dt[date >= start_date & date <= end_date]
-
-  na_cases  <- present_dt[, all(is.na(daily_cases)),  by = location_id][V1 == TRUE, location_id]
-  na_deaths <- present_dt[, all(is.na(daily_deaths)), by = location_id][V1 == TRUE, location_id]
-
-  if (length(na_cases) > 0) {
-    drop_log[[paste0(event_name, '__na_cases')]] <- data.table(
-      location_id = na_cases, event = event_name, reason = 'missing_cases'
-    )
-  }
-  if (length(na_deaths) > 0) {
-    drop_log[[paste0(event_name, '__na_deaths')]] <- data.table(
-      location_id = na_deaths, event = event_name, reason = 'missing_deaths'
-    )
-  }
-}
 
 # Write drop log
 if (length(drop_log) > 0) {
