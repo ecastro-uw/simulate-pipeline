@@ -190,34 +190,43 @@ prep_data <- function(pipeline_inputs){
                  pct_edu, pct_gathering, pct_gym, pct_retail,
                  pct_sah, pct_dining, pct_bar)]
 
-    # Append two lag-padding weeks so that the 2-week lagged covariate terms
-    # (e.g. cases_lag2_sum = cases_pc[t-1] + cases_pc[t-2]) are defined for
-    # every actual training observation. Padding rows have y = NA and are
-    # naturally excluded by each model's !is.na(cases_lag2_sum) filter.
+    # Append two lag-padding weeks so that lagged covariate terms are defined
+    # for all actual training observations. Padding rows have y = NA and are
+    # excluded from model fits by each model's NA-dropping logic.
+    # Two weeks are needed to cover the 2-week lagged sum for cases/deaths;
+    # the nearer padding week also supplies the 1-week lagged mandate values.
     lag_pad_wks <- 2L
     train_start_per_loc <- outcome_dt[
       , .(train_start = min(date), onset_date = unique(onset_date)),
       by = location_id
     ][location_id %in% dt$location_id]
 
-    covid_pad <- merge(
+    pad_daily <- merge(
       covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
       train_start_per_loc, by = 'location_id'
     )
-    covid_pad <- covid_pad[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
-    covid_pad[, time_id := as.numeric(floor((date - onset_date) / 7))]
+    pad_daily <- pad_daily[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
 
-    pad_weekly <- covid_pad[, .(
-      y         = NA_real_,
-      cases_pc  = sum(daily_cases) / unique(pop) * 10000,
-      deaths_pc = sum(daily_deaths) / unique(pop) * 10000,
-      pct_edu      = NA_real_,
-      pct_gathering = NA_real_,
-      pct_gym      = NA_real_,
-      pct_retail   = NA_real_,
-      pct_sah      = NA_real_,
-      pct_dining   = NA_real_,
-      pct_bar      = NA_real_
+    pad_daily <- merge(
+      pad_daily,
+      mandate_dt[, .(location_id, date, primary_edu, gatherings50i100o,
+                     gym_pool_leisure_close, non_essential_retail_close,
+                     stay_at_home, dining_close, bar_close)],
+      by = c('location_id', 'date'), all.x = TRUE
+    )
+    pad_daily[, time_id := as.numeric(floor((date - onset_date) / 7))]
+
+    pad_weekly <- pad_daily[, .(
+      y             = NA_real_,
+      cases_pc      = sum(daily_cases) / unique(pop) * 10000,
+      deaths_pc     = sum(daily_deaths) / unique(pop) * 10000,
+      pct_edu       = sum(primary_edu) / 7,
+      pct_gathering = sum(gatherings50i100o) / 7,
+      pct_gym       = sum(gym_pool_leisure_close) / 7,
+      pct_retail    = sum(non_essential_retail_close) / 7,
+      pct_sah       = sum(stay_at_home) / 7,
+      pct_dining    = sum(dining_close) / 7,
+      pct_bar       = sum(bar_close) / 7
     ), by = c('location_id', 'time_id')]
 
     dt <- rbind(dt, pad_weekly)
