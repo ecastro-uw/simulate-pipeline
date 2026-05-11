@@ -8,6 +8,7 @@ model_21 <- function(dataset, w, d) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
+  dt <- dt[!is.na(y)]
 
   # Fit lme with location random intercepts and global ARMA(1,1) errors
   fit <- lme(y ~ 1,

@@ -13,7 +13,7 @@ model_26 <- function(dataset, w, d) {
   dt[, lagged_gathering := shift(pct_gathering), by = location_id]
 
   # Drop rows with NA covariates (first row per location due to lagging)
-  dt_complete <- dt[!is.na(lagged_gathering)]
+  dt_complete <- dt[!is.na(lagged_gathering) & !is.na(y)]
 
   # Fit lme with location random intercepts and global ARMA(1,1) errors
   fit <- lme(y ~ lagged_gathering,
