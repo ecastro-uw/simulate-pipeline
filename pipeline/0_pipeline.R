@@ -68,7 +68,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
     candidate_mod_output <- cbind(preds_by_model[, .(model, location_id, time_id)], quantile_dt)
   }
   
-  # (3) Pre-adjustment ensemble estimates
+  # (3) Pre-adjustment ensemble estimates 
   forecast_target <- configs$w - 1
   
   # add p-value
@@ -101,15 +101,22 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
     }
   }
   
-  # (4) & (5) Pre- and post-adjustment coverage rate
+  # (4) Pre-adjusted ensemble estimates for WIS
+  quantile_dt <- as.data.table(t(apply(unadj_results2[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
+  setnames(quantile_dt, pi_names)
+  quantile_dt[, mean := unadj_results2[, rowMeans(.SD), .SDcols = draw_cols]]
+  pre_adj_output_v2 <- cbind(unadj_results2[, .(location_id, time_id)], quantile_dt)
+  
+  
+  # (5) & (6) Pre- and post-adjustment coverage rate
   coverage_pre <- adjusted_results$coverage_pre
   coverage_post <- adjusted_results$coverage_post
   
-  # (6) & (7) Multipliers
+  # (7) & (8) Multipliers
   multiplier <- adjusted_results$multiplier   #final multiplier (t<0)
   multiplier2 <- adjusted_results$multiplier2 #multiplier for WIS (t<-1)
 
-  # (8) Adjusted forecasts
+  # (9) Adjusted forecasts
   if(configs$save_draws==T){
     if(configs$save_all_time_steps==T){ 
       # save out draws, all time steps
@@ -140,22 +147,23 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
     }
   }
   
-  # (9) Adjusted forecasts for WIS (t=-1)
+  # (10) Adjusted forecasts for WIS (t=-1)
   #wis_results
   
-  # (10) & (11) Ensemble weights and fit statistics
+  # (11) & (12) Ensemble weights and fit statistics
   # weights_dt
   # fit_stats_dt
   
-  # (12) Sigmas
+  # (13) Sigmas
   # sigmas_dt
   
-  # (13) Time stamps
+  # (14) Time stamps
   time_stamps <- c(data_time = data_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
   return(list(obs_dt = data,
               candidate_mod_output = candidate_mod_output,
               pre_adj_output = pre_adj_output,
+              pre_adj_output_v2 = pre_adj_output_v2,
               coverage_pre = coverage_pre,
               coverage_post = coverage_post,
               multiplier = multiplier,

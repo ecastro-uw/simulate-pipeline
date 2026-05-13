@@ -11,6 +11,7 @@ model_30 <- function(dataset, w, d){
   
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)
+  dt <- dt[!is.na(y)]
   
   locations <- unique(dt$location_id)
   results_list <- vector("list", length(locations))

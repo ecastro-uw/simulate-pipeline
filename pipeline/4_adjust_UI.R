@@ -130,6 +130,7 @@ adjust_UI <- function(data, results_draws, unadj_results2, configs){
   pi_names <- paste0('q', pi_probs * 100)
   quantile_dt <- as.data.table(t(apply(draws_adj2[, .SD, .SDcols = draw_cols], 1, quantile, pi_probs)))
   setnames(quantile_dt, pi_names)
+  quantile_dt[, mean := draws_adj2[, rowMeans(.SD), .SDcols = draw_cols]]
   final_results2 <- cbind(draws_adj2[, .(location_id, time_id)], quantile_dt)
 
   return(list(final_results = draws_adj,

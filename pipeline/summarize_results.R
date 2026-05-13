@@ -14,10 +14,11 @@ library(scoringutils, lib.loc = '/ihme/homes/ems2285/lib_for_scoringutils')
 library(data.table)
 library(ggplot2)
 library(dplyr)
+library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260426.01'
+version_id <- '20260511.01'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
@@ -384,3 +385,152 @@ plot_timeseries(context = 10,
 plot_timeseries(context = 1,
                 model_name = "ensemble",
                 save_pdf = F)
+
+
+
+
+
+### (D) Compare IS/OOS and Unadj/Adj intervals
+compare_pred_intervals <- function(context, save_pdf = FALSE){
+  
+  # Resolve context
+  context_lookup <- fread(paste0(root_dir, '/inputs/context_lookup_table.csv'))
+  one_row <- context_lookup[context_id==context]
+  context_name <- toTitleCase(paste0(one_row$mandate_num, ' ', one_row$mandate_type, ' mandates among ',
+                        one_row$pop_cat, ' ', ifelse(one_row$pol_cat=='D', 'Democratic', 
+                        ifelse(one_row$pol_cat=='M', 'Moderate', 'Republican')), ' counties (context ', context,')'))
+  
+  # Define columns to keep from each file
+  col_names <- c('location_id', 'time_id', 'q2.5', 'mean', 'q97.5')
+  
+  # load the data and predictions
+  obs_dt <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id > -2 & time_id < 0, .(location_id, time_id, y)]
+  unadj_is <- fread(paste0(root_dir,'/batched_output/pred_pre_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  unadj_oos <- fread(paste0(root_dir,'/batched_output/pred_pre_v2context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  adj_is <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  adj_oos <- fread(paste0(root_dir,'/batched_output/pred_adj_M2_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  multipliers <- fread(paste0(root_dir,'/batched_output/coverage_context_',context,'.csv'))
+  
+  # combine
+  unadj_is[, `:=` (type = 'IS', adj = 'No', cats = 'IS unadj')]
+  unadj_oos[, `:=` (type = 'OOS', adj = 'No', cats = 'OOS unadj')]
+  adj_is[, `:=` (type = 'IS', adj = 'Yes', cats = 'IS adj')]
+  adj_oos[, `:=` (type = 'OOS', adj = 'Yes', cats = 'OOS adj')]
+  plot_dt <- rbind(unadj_is, unadj_oos)
+  plot_dt <- rbind(plot_dt, adj_is)
+  plot_dt <- rbind(plot_dt, adj_oos)
+  
+  # enumerate locations
+  loc_ids <- unique(plot_dt$location_id)
+  
+  # Define category sort order and colors
+  cats_levels <- c("IS unadj", "IS adj", "OOS unadj", "OOS adj")
+  plot_dt[, cats := factor(cats, levels = cats_levels)]
+  cats_colors <- c(
+    "IS unadj"  = "#2166AC",  # blue
+    "IS adj"    = "#762A83",  # purple
+    "OOS unadj" = "#B2182B",  # red
+    "OOS adj"   = "#D4760A"   # orange
+  )
+  
+  # Define coverage table for each category
+  coverage_dt <- merge(plot_dt, obs_dt[time_id==-1], by=c('location_id', 'time_id'))
+  coverage_dt[, in_interval := ifelse(y >= q2.5 & y <= q97.5, 1, 0)]
+  summary_dt <- coverage_dt[ , sum(in_interval)/length(loc_ids), by=cats]
+  setnames(summary_dt, 'V1', 'coverage')
+  summary_dt <- summary_dt[order(cats)]
+  summary_dt$multiplier <- c('NA', round(multipliers$multiplier,2),
+                             'NA', round(multipliers$multiplier2,2))
+  
+  # add location names
+  plot_dt <- merge(plot_dt, counties[,.(location_id, full_name, state)], by='location_id', all.x=T)
+  
+  # define jitter 
+  offsets <- seq(-0.2, 0.2, length.out = 4)
+  offset_map <- setNames(offsets, levels(plot_dt$cats))
+  plot_dt[, x_jitter := time_id + offset_map[as.character(cats)]]
+  
+  # Build individual plots
+  plot_one_loc <- function(loc_id){
+    
+  p <- ggplot() +
+    # Observed points
+    geom_point(
+      data = obs_dt[location_id == loc_id],
+      aes(x = time_id, y = y),
+      shape = 21, fill = "white", color = "black",
+      size = 3, stroke = 1.2
+    ) +
+    # Prediction interval error bars (jittered)
+    geom_errorbar(
+      data = plot_dt[location_id == loc_id],
+      aes(x = x_jitter, y = mean, ymin = q2.5, ymax = q97.5, color = cats),
+      width = 0.1, linewidth = 0.8, alpha = 0.85
+    ) +
+    # Mean point per model
+    geom_point(
+      data = plot_dt[location_id == loc_id],
+      aes(x = x_jitter, y = mean, color = cats),
+      size = 2
+    ) +
+    scale_x_continuous(
+      name = "",
+      breaks = c(-3, -2, -1)
+    ) +
+    scale_y_continuous(name = "") +
+    scale_color_manual(values = cats_colors, breaks = cats_levels, name = "") +
+    #ggtitle(plot_dt[location_id == loc_id, unique(full_name)]) +
+    theme_classic() +
+    theme(
+      legend.text = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10)
+    )
+    
+    # Strip legend (one legend will be added back)
+    p + theme(legend.position = "none")
+    #return(p)
+  }
+  
+  # make plots for all locations
+  plots <- lapply(loc_ids, plot_one_loc)
+  
+  # Extract legend from a single full plot
+  legend_plot <- ggplot() +
+    geom_point(
+      data = plot_dt[location_id == loc_ids[1]],
+      aes(x = x_jitter, y = mean, color = cats),
+      size = 2
+    ) +
+    scale_color_brewer(palette = "Set1", name = "") +
+    theme_classic() +
+    theme(
+      legend.text = element_text(size = 10),
+      legend.position = "bottom"
+    )
+  
+  shared_legend <- cowplot::get_legend(legend_plot)
+  
+  # Combine plots + legend with patchwork
+  grid <- patchwork::wrap_plots(plots) +
+    patchwork::plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+  
+  # Add a title
+  grid <- grid + patchwork::plot_annotation(title = context_name)
+  
+  # Either save to PDF or print to console
+  if (save_pdf) {
+    path <- paste0(root_dir,'/compare_PIs_context_',context,'.pdf')
+    pdf(path, width = 11, height=8)
+    print(grid)
+    dev.off()
+    message("Saved to", path)
+  } else {
+    print(grid)
+  }
+  invisible(grid)
+  return(summary_dt)
+}
+
+compare_pred_intervals(10, save_pdf = T)
