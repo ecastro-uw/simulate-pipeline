@@ -70,7 +70,7 @@ calc_wis <- function(vals, forecasts, observations, list_of_models, d){
   scores <- wis(observed = obs$y, 
                 predicted = as.matrix(ensemble_summary[, .SD, .SDcols = pi_names]),
                 quantile = pi_probs)
-  wis <- sum(scores)
-  
-  return(wis)
+  wis_score <- sum(scores)
+
+  return(wis_score)
 }

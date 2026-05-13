@@ -34,13 +34,16 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
           message        = NA_character_
         )
       } else {
+        # L-BFGS-B uses numerical gradients, which break on non-smooth objectives
+        # like WIS (quantiles create kinks). Use Nelder-Mead for WIS.
+        optim_method <- ifelse(configs$perform_meas == 'MSE', 'L-BFGS-B', 'Nelder-Mead')
         fit <- optim(par = vals,
                      fn = perform_func,
                      forecasts = forecasts_subset,
                      observations = obs_dt,
                      list_of_models = list_of_models,
                      d=d,
-                     method = 'L-BFGS-B')
+                     method = optim_method)
         weights <- create_weights(fit$par)
         fit_stats_dt <- data.table(
           convergence      = fit$convergence,
