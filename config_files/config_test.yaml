@@ -1,6 +1,6 @@
 ---
 lookup_suffix: inv1_0510
-perform_meas: MSE
+perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
 padding: 2 #number of weeks after prior mandate lift to disregard
