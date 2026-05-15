@@ -37,13 +37,23 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
         # L-BFGS-B uses numerical gradients, which break on non-smooth objectives
         # like WIS (quantiles create kinks). Use Nelder-Mead for WIS.
         optim_method <- ifelse(configs$perform_meas == 'MSE', 'L-BFGS-B', 'Nelder-Mead')
+        # Normalize the objective to ~1 at the start so Nelder-Mead's relative
+        # tolerance is meaningful regardless of the absolute scale of WIS/MSE.
+        # Without this: large objectives cause simplex degeneracy (code 10);
+        # small objectives cause the surface to appear flat, exhausting iterations (code 1).
+        starting_val <- perform_func(vals,
+                                     forecasts = forecasts_subset,
+                                     observations = obs_dt,
+                                     list_of_models = list_of_models,
+                                     d = d)
         fit <- optim(par = vals,
                      fn = perform_func,
                      forecasts = forecasts_subset,
                      observations = obs_dt,
                      list_of_models = list_of_models,
                      d=d,
-                     method = optim_method)
+                     method = optim_method,
+                     control = list(fnscale = starting_val))
         weights <- create_weights(fit$par)
         fit_stats_dt <- data.table(
           convergence      = fit$convergence,
