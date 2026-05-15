@@ -37,15 +37,8 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
         # L-BFGS-B uses numerical gradients, which break on non-smooth objectives
         # like WIS (quantiles create kinks). Use Nelder-Mead for WIS.
         optim_method <- ifelse(configs$perform_meas == 'MSE', 'L-BFGS-B', 'Nelder-Mead')
-        # Normalize the objective to ~1 at the start so Nelder-Mead's relative
-        # tolerance is meaningful regardless of the absolute scale of WIS/MSE.
-        # Without this: large objectives cause simplex degeneracy (code 10);
-        # small objectives cause the surface to appear flat, exhausting iterations (code 1).
-        starting_val <- perform_func(vals,
-                                     forecasts = forecasts_subset,
-                                     observations = obs_dt,
-                                     list_of_models = list_of_models,
-                                     d = d)
+        # Default maxit (500*(n+1)) is insufficient for high-dimensional cases (20+ weights).
+        maxit <- 10 * 500 * (length(vals) + 1)
         fit <- optim(par = vals,
                      fn = perform_func,
                      forecasts = forecasts_subset,
@@ -53,7 +46,26 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
                      list_of_models = list_of_models,
                      d=d,
                      method = optim_method,
-                     control = list(fnscale = starting_val))
+                     control = list(maxit = maxit))
+
+        # Restart from a perturbed simplex on degeneracy (code 10). Degeneracy
+        # means the simplex collapsed due to repeated contractions on an irregular
+        # surface; a different starting point may avoid the same collapse.
+        n_restarts <- 5
+        restart_attempt <- 0
+        while (fit$convergence == 10 && restart_attempt < n_restarts) {
+          restart_attempt <- restart_attempt + 1
+          perturbed_vals <- vals + rnorm(length(vals), sd = 1)
+          fit_new <- optim(par = perturbed_vals,
+                           fn = perform_func,
+                           forecasts = forecasts_subset,
+                           observations = obs_dt,
+                           list_of_models = list_of_models,
+                           d = d,
+                           method = optim_method,
+                           control = list(maxit = maxit))
+          if (fit_new$value < fit$value) fit <- fit_new
+        }
         weights <- create_weights(fit$par)
         fit_stats_dt <- data.table(
           convergence      = fit$convergence,
