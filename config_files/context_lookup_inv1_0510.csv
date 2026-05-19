@@ -17,9 +17,9 @@ context_id,country,ADMN,mandate_type,mandate_num,outcome,pop_cat,pol_cat,N,model
 16,USA,2,bar,first,visits to bars,small,D,46,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0
 17,USA,2,bar,first,visits to bars,small,M,76,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0
 18,USA,2,bar,first,visits to bars,small,R,369,1,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0
-19,USA,2,bar,second,visits to bars,big,D,13,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0
+19,USA,2,bar,second,visits to bars,big,D,13,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,0
 20,USA,2,bar,second,visits to bars,big,M,21,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,0
 21,USA,2,bar,second,visits to bars,big,R,5,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,1,1,0
-22,USA,2,bar,second,visits to bars,small,D,9,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0
+22,USA,2,bar,second,visits to bars,small,D,9,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,0,0,1,1,0
 23,USA,2,bar,second,visits to bars,small,M,15,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0
 24,USA,2,bar,second,visits to bars,small,R,50,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0

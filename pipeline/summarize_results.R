@@ -18,7 +18,7 @@ library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260511.01'
+version_id <- '20260517.01'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
@@ -224,9 +224,16 @@ dev.off()
 
 ### PART 2 - VETTING PLOTS ###
 
-### (A) Check that models converged
+### (A) Check that all contexts successfully optimized ensemble weights
 fit_files <- list.files(file.path(root_dir, 'batched_output'), pattern = 'ens_fit_stats', full.names=T)
-dt_all <- rbindlist(lapply(fit_files, function(x) fread(x)))
+dt_all <- rbindlist(lapply(fit_files, function(x) {
+  dt <- fread(x)
+  dt[, context_id := as.integer(gsub('.*_context_(\\d+)\\.csv$', '\\1', basename(x)))]
+  dt
+}))
+
+# Print contexts with non-convergence
+dt_all[convergence!=0]
 
 ### (B) Ensemble weight heat map
 
@@ -349,46 +356,6 @@ plot_timeseries(context = 4,
                 model_name = "ensemble",
                 save_pdf = F)
 
-# how about first bar mandates?
-# big dem
-plot_timeseries(context = 13,
-                model_name = "ensemble",
-                save_pdf = F)
-
-
-
-plot_timeseries(context = 1,
-                model_name = "model_4",
-                save_pdf = T)
-plot_timeseries(context = 1,
-                model_name = "model_12",
-                save_pdf = T)
-plot_timeseries(context = 7,
-                model_name = "model_30",
-                save_pdf = T)
-
-
-plot_timeseries(context = 7,
-                model_name = "ensemble",
-                save_pdf = F)
-plot_timeseries(context = 8,
-                model_name = "ensemble",
-                save_pdf = F)
-plot_timeseries(context = 9,
-                model_name = "ensemble",
-                save_pdf = F)
-plot_timeseries(context = 10,
-                model_name = "ensemble",
-                save_pdf = F)
-
-
-plot_timeseries(context = 1,
-                model_name = "ensemble",
-                save_pdf = F)
-
-
-
-
 
 ### (D) Compare IS/OOS and Unadj/Adj intervals
 compare_pred_intervals <- function(context, save_pdf = FALSE){
@@ -406,7 +373,7 @@ compare_pred_intervals <- function(context, save_pdf = FALSE){
   # load the data and predictions
   obs_dt <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id > -2 & time_id < 0, .(location_id, time_id, y)]
   unadj_is <- fread(paste0(root_dir,'/batched_output/pred_pre_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
-  unadj_oos <- fread(paste0(root_dir,'/batched_output/pred_pre_v2context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  unadj_oos <- fread(paste0(root_dir,'/batched_output/pred_pre_v2_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
   adj_is <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
   adj_oos <- fread(paste0(root_dir,'/batched_output/pred_adj_M2_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
   multipliers <- fread(paste0(root_dir,'/batched_output/coverage_context_',context,'.csv'))
@@ -533,4 +500,58 @@ compare_pred_intervals <- function(context, save_pdf = FALSE){
   return(summary_dt)
 }
 
-compare_pred_intervals(10, save_pdf = T)
+compare_pred_intervals(7, save_pdf = T)
+
+
+
+
+just_the_table <- function(context){
+  
+  # Resolve context
+  context_lookup <- fread(paste0(root_dir, '/inputs/context_lookup_table.csv'))
+  one_row <- context_lookup[context_id==context]
+  context_name <- toTitleCase(paste0(one_row$mandate_num, ' ', one_row$mandate_type, ' mandates among ',
+                                     one_row$pop_cat, ' ', ifelse(one_row$pol_cat=='D', 'Democratic', 
+                                                                  ifelse(one_row$pol_cat=='M', 'Moderate', 'Republican')), ' counties (context ', context,')'))
+  
+  # Define columns to keep from each file
+  col_names <- c('location_id', 'time_id', 'q2.5', 'mean', 'q97.5')
+  
+  # load the data and predictions
+  obs_dt <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id > -2 & time_id < 0, .(location_id, time_id, y)]
+  unadj_is <- fread(paste0(root_dir,'/batched_output/pred_pre_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  unadj_oos <- fread(paste0(root_dir,'/batched_output/pred_pre_v2_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  adj_is <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  adj_oos <- fread(paste0(root_dir,'/batched_output/pred_adj_M2_context_',context,'.csv'))[time_id==-1, .SD, .SDcols=col_names]
+  multipliers <- fread(paste0(root_dir,'/batched_output/coverage_context_',context,'.csv'))
+  
+  # combine
+  unadj_is[, `:=` (type = 'IS', adj = 'No', cats = 'IS unadj')]
+  unadj_oos[, `:=` (type = 'OOS', adj = 'No', cats = 'OOS unadj')]
+  adj_is[, `:=` (type = 'IS', adj = 'Yes', cats = 'IS adj')]
+  adj_oos[, `:=` (type = 'OOS', adj = 'Yes', cats = 'OOS adj')]
+  plot_dt <- rbind(unadj_is, unadj_oos)
+  plot_dt <- rbind(plot_dt, adj_is)
+  plot_dt <- rbind(plot_dt, adj_oos)
+  
+  # enumerate locations
+  loc_ids <- unique(plot_dt$location_id)
+  
+  # Define category sort order and colors
+  cats_levels <- c("IS unadj", "IS adj", "OOS unadj", "OOS adj")
+  plot_dt[, cats := factor(cats, levels = cats_levels)]
+  
+  # Define coverage table for each category
+  coverage_dt <- merge(plot_dt, obs_dt[time_id==-1], by=c('location_id', 'time_id'))
+  coverage_dt[, in_interval := ifelse(y >= q2.5 & y <= q97.5, 1, 0)]
+  summary_dt <- coverage_dt[ , sum(in_interval)/length(loc_ids), by=cats]
+  setnames(summary_dt, 'V1', 'coverage')
+  summary_dt <- summary_dt[order(cats)]
+  summary_dt$multiplier <- c('NA', round(multipliers$multiplier,2),
+                             'NA', round(multipliers$multiplier2,2))
+  summary_dt[, context_id := context]
+  return(summary_dt)
+}
+
+all_contexts <- rbindlist(lapply(c(1:11,13:24), just_the_table))
+fwrite(all_contexts, paste0(root_dir,'/coverage_compare.csv'))

@@ -35,13 +35,33 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
         )
       } else {
         optim_method <- ifelse(configs$perform_meas == 'MSE', 'L-BFGS-B', 'Nelder-Mead')
+        maxit <- 5000*(length(vals)+1)
         fit <- optim(par = vals,
                      fn = perform_func,
                      forecasts = forecasts_subset,
                      observations = obs_dt,
                      list_of_models = list_of_models,
                      d=d,
-                     method = optim_method)
+                     method = optim_method,
+                     control = list(maxit = maxit))
+        
+        # If optim fails, re-try with different starting point
+        n_restarts <- 3
+        restart_attempt <- 0
+        while (fit$convergence == 10 && restart_attempt < n_restarts) {
+          restart_attempt <- restart_attempt + 1
+          new_start_vals <- vals + rnorm(length(vals), sd = 1)
+          fit_new <- optim(par = new_start_vals,
+                           fn = perform_func,
+                           forecasts = forecasts_subset,
+                           observations = obs_dt,
+                           list_of_models = list_of_models,
+                           d=d,
+                           method = optim_method,
+                           control = list(maxit = maxit))
+          if (fit_new$value < fit$value) fit <- fit_new
+        }
+        
         weights <- create_weights(fit$par)
         fit_stats_dt <- data.table(
           convergence      = fit$convergence,
