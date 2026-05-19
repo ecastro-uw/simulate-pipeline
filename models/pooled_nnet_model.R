@@ -1,4 +1,4 @@
-pooled_nnet_model <- function(dataset, w, d){
+pooled_nnet_model <- function(dataset, w, d, use_param_uncertainty = TRUE){
 
   # Description of function:
   # Fits a single neural network (nnet) on lag features pooled across all locations.
@@ -75,22 +75,31 @@ pooled_nnet_model <- function(dataset, w, d){
     loc      <- locations[i]
     loc_last <- last_dt[location_id == loc]
 
-    draws <- sapply(seq_len(d), function(x) {
-      # cur  = y_t  (most recent observed value)
-      # prev = y_{t-1}
+    if (use_param_uncertainty) {
+      draws <- sapply(seq_len(d), function(x) {
+        cur  <- loc_last$y
+        prev <- loc_last$y_lag1
+        val  <- NA_real_
+        for (step in seq_len(w)) {
+          new_data <- data.frame(y_lag1 = cur, y_lag2 = prev)
+          point    <- as.numeric(predict(best_fit, new_data))
+          val      <- point + rnorm(1L, mean = 0, sd = sigma)
+          prev     <- cur
+          cur      <- val
+        }
+        val
+      })
+    } else {
       cur  <- loc_last$y
       prev <- loc_last$y_lag1
-
-      val <- NA_real_
       for (step in seq_len(w)) {
         new_data <- data.frame(y_lag1 = cur, y_lag2 = prev)
         point    <- as.numeric(predict(best_fit, new_data))
-        val      <- point + rnorm(1L, mean = 0, sd = sigma)
         prev     <- cur
-        cur      <- val   # feed noisy draw forward as next lag
+        cur      <- point
       }
-      val
-    })
+      draws <- rnorm(d, mean = cur, sd = sigma)
+    }
 
     draws_dt <- as.data.table(t(draws))
     setnames(draws_dt, paste0("draw_", seq_len(d)))

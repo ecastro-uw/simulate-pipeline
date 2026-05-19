@@ -1,4 +1,4 @@
-nnetar_model <- function(dataset, w, d){
+nnetar_model <- function(dataset, w, d, use_param_uncertainty = TRUE){
 
   # Description of function:
   # Neural network auto-regressive model, fit separately per location.
@@ -27,16 +27,22 @@ nnetar_model <- function(dataset, w, d){
     #   repeats=20: enough ensemble networks for stable estimates on a short series
     tmp_model <- nnetar(data_ts, p = 2, P = 0, size = 2, repeats = 20, lambda = NULL)
 
-    # Generate d simulation draws for the w-week-ahead forecast.
-    # Each simulate() call draws one stochastic path; we keep only step w.
-    draws <- sapply(seq_len(d), function(x) {
-      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
-      sim[w]
-    })
-
     # Compute sigma as RMSE of in-sample residuals
     resids <- residuals(tmp_model)
     sigma <- sqrt(mean(resids^2, na.rm = TRUE))
+
+    # Generate d draws for the w-week-ahead forecast.
+    # With parameter uncertainty: stochastic simulation paths from the fitted model.
+    # Without parameter uncertainty: point forecast plus residual noise only.
+    if (use_param_uncertainty) {
+      draws <- sapply(seq_len(d), function(x) {
+        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+        sim[w]
+      })
+    } else {
+      pt_forecast <- as.numeric(forecast(tmp_model, h = w)$mean)[w]
+      draws <- rnorm(d, mean = pt_forecast, sd = sigma)
+    }
 
     # Assemble one-row-per-location result (wide by draw)
     draws_dt <- as.data.table(t(draws))

@@ -1,4 +1,4 @@
-arima_model <- function(dataset, w, d) {
+arima_model <- function(dataset, w, d, use_param_uncertainty = TRUE) {
 
   # Description of function:
   # ARIMA(1,0,0) model with a shared AR(1) coefficient estimated from data
@@ -52,16 +52,22 @@ arima_model <- function(dataset, w, d) {
                        include.mean = TRUE,
                        fixed = c(pooled_phi, NA))
 
-    # Generate d simulation draws for the w-week-ahead forecast.
-    # Each simulate() call draws one stochastic path; we keep only step w.
-    draws <- sapply(seq_len(d), function(x) {
-      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
-      sim[w]
-    })
-
     # Compute sigma as RMSE of in-sample residuals
     resids <- residuals(tmp_model)
     sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
+
+    # Generate d draws for the w-week-ahead forecast.
+    # With parameter uncertainty: stochastic simulation paths from the fitted model.
+    # Without parameter uncertainty: point forecast plus residual noise only.
+    if (use_param_uncertainty) {
+      draws <- sapply(seq_len(d), function(x) {
+        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+        sim[w]
+      })
+    } else {
+      pt_forecast <- as.numeric(predict(tmp_model, n.ahead = w)$pred)[w]
+      draws <- rnorm(d, mean = pt_forecast, sd = sigma)
+    }
 
     draws_dt <- as.data.table(t(draws))
     setnames(draws_dt, paste0("draw_", seq_len(d)))
