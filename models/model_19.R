@@ -3,7 +3,7 @@
 # Coefficients estimated globally across all locations.
 # ARMA(1,1) error structure captures temporal autocorrelation.
 
-model_19 <- function(dataset, w, d) {
+model_19 <- function(dataset, w, d, use_param_uncertainty = TRUE) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
@@ -51,8 +51,12 @@ model_19 <- function(dataset, w, d) {
   ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
 
   # Draw beta from multivariate normal (coefficient uncertainty)
-  beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
-  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+  if (use_param_uncertainty) {
+    beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
+    if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+  } else {
+    beta_draws <- matrix(rep(coef(fit), d), nrow = d, byrow = TRUE)
+  }
 
   # Predictive draws: d x n_loc -> transpose to n_loc x d
   fitted_draws <- beta_draws %*% t(X_new)

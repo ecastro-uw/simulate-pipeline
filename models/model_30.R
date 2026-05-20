@@ -1,7 +1,7 @@
 # Model 30: Exponential Smoothing Model
 # Covariates: None
 
-model_30 <- function(dataset, w, d){
+model_30 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.
@@ -31,15 +31,22 @@ model_30 <- function(dataset, w, d){
     # restrict = F allows multiplicative error models
     tmp_model <- ets(data_ts, restrict = FALSE)
     
-    # Generate d simulation draws for the w-week-ahead forecast
-    draws <- sapply(seq_len(d), function(x) {
-      sim <- as.numeric(simulate(tmp_model, future = T, nsim = w))
-      sim[w]
-    })
-    
     # Compute sigma as the RMSE of in-sample resids
     resids <- residuals(tmp_model)
-    sigma  <- sqrt(mean(resids^2, na.rm=T)) 
+    sigma  <- sqrt(mean(resids^2, na.rm=T))
+
+    # Generate d draws for the w-week-ahead forecast.
+    # With parameter uncertainty: stochastic simulation paths from the fitted model.
+    # Without parameter uncertainty: point forecast plus residual noise only.
+    if (use_param_uncertainty) {
+      draws <- sapply(seq_len(d), function(x) {
+        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w))
+        sim[w]
+      })
+    } else {
+      pt_forecast <- as.numeric(forecast(tmp_model, h = w)$mean)[w]
+      draws <- rnorm(d, mean = pt_forecast, sd = sigma)
+    }
     
     # Compile the forecasts
     draws_dt <- as.data.table(t(draws))

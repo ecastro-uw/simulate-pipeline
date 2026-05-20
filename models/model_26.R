@@ -4,7 +4,7 @@
 # Location-specific random intercepts capture between-location mean differences.
 # ARMA(1,1) error structure captures temporal autocorrelation.
 
-model_26 <- function(dataset, w, d) {
+model_26 <- function(dataset, w, d, use_param_uncertainty = TRUE) {
 
   dt <- copy(dataset)
   setorder(dt, location_id, time_id)
@@ -58,8 +58,12 @@ model_26 <- function(dataset, w, d) {
   X_new <- model.matrix(~lagged_gathering, data = new_dt)  # n_loc x 2
 
   # Draw fixed-effect beta from multivariate normal (coefficient uncertainty)
-  beta_draws <- mvrnorm(d, mu = beta_hat, Sigma = vcov_beta)
-  if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+  if (use_param_uncertainty) {
+    beta_draws <- mvrnorm(d, mu = beta_hat, Sigma = vcov_beta)
+    if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+  } else {
+    beta_draws <- matrix(rep(beta_hat, d), nrow = d, byrow = TRUE)
+  }
 
   # Fixed-effect component: d x n_loc
   fitted_draws <- beta_draws %*% t(X_new)

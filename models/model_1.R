@@ -1,6 +1,6 @@
 # Model 1: Naive Flat 1
 
-model_1 <- function(dataset, w, d, sigma = NULL){
+model_1 <- function(dataset, w, d, use_param_uncertainty = TRUE, sigma = NULL){
 
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.

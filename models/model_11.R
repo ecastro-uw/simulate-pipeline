@@ -2,7 +2,7 @@
 # Covariates: Sum of mandates (edu + gather + gym + bar)
 # Note: Currently only supports w=1 (hard coded)
 
-model_11 <- function(dataset, w, d){
+model_11 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   
   # Make a copy so the original stays unchanged
   dt <- copy(dataset)
@@ -17,8 +17,12 @@ model_11 <- function(dataset, w, d){
   # Fit the model
   fit <- lm(y ~ lagged_y + lagged_mandate_tot, data = dt)
   
-  # Get draws of the regression coefs 
-  beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
+  # Get draws of the regression coefs
+  if (use_param_uncertainty) {
+    beta_draws <- mvrnorm(n = d, mu = coef(fit), Sigma = vcov(fit))
+  } else {
+    beta_draws <- matrix(rep(coef(fit), d), nrow = d, byrow = TRUE)
+  }
   
   # Generate data file for 1-week ahead predictions
   last_time_step <- max(dt$time_id)

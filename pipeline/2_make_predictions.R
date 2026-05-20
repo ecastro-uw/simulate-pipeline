@@ -8,6 +8,7 @@ make_predictions <- function(data, pipeline_inputs){
   list_of_models <- configs$models
   w <- configs$w
   d <- configs$d
+  use_param_uncertainty <- isTRUE(configs[["use_param_uncertainty"]])
   spread <- 4 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
   
   # Use each model to forecast the desired number of time steps
@@ -21,7 +22,7 @@ make_predictions <- function(data, pipeline_inputs){
     for (i in seq_along(hold_out)){
       drop_n <- hold_out[i]
       train_dt <- dt[time_id <= (-drop_n)]
-      list_of_results[[i]] <- model(dataset=train_dt, w, d)
+      list_of_results[[i]] <- model(dataset=train_dt, w, d, use_param_uncertainty)
     }
     results_one_model <- rbindlist(list_of_results)
 

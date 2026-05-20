@@ -1,6 +1,6 @@
 # Model 2: Naive Slope 2
 
-model_2 <- function(dataset, w, d, sigma = NULL){
+model_2 <- function(dataset, w, d, use_param_uncertainty = TRUE, sigma = NULL){
 
   # Description of function:
   # Fit the model on the dataset provided and output d draws of the w-week-ahead forecast.

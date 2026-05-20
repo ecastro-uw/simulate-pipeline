@@ -1,4 +1,4 @@
-nnetar_xreg_model <- function(dataset, w, d, p_x = 2){
+nnetar_xreg_model <- function(dataset, w, d, use_param_uncertainty = TRUE, p_x = 2){
 
   # Description of function:
   # Neural network autoregression model (nnetar) with lagged external regressors,
@@ -77,18 +77,25 @@ nnetar_xreg_model <- function(dataset, w, d, p_x = 2){
       }
     }
 
-    # -------------------------------------------------------------------------
-    # (4) Generate d simulation draws for the w-step-ahead forecast
-    # -------------------------------------------------------------------------
-    draws <- sapply(seq_len(d), function(x) {
-      sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w,
-                                 xreg = xreg_future))
-      sim[w]
-    })
-
     # Compute sigma as RMSE of in-sample residuals
     resids <- residuals(tmp_model)
     sigma  <- sqrt(mean(resids^2, na.rm = TRUE))
+
+    # -------------------------------------------------------------------------
+    # (4) Generate d draws for the w-step-ahead forecast.
+    # With parameter uncertainty: stochastic simulation paths from the fitted model.
+    # Without parameter uncertainty: point forecast plus residual noise only.
+    # -------------------------------------------------------------------------
+    if (use_param_uncertainty) {
+      draws <- sapply(seq_len(d), function(x) {
+        sim <- as.numeric(simulate(tmp_model, future = TRUE, nsim = w,
+                                   xreg = xreg_future))
+        sim[w]
+      })
+    } else {
+      pt_forecast <- as.numeric(forecast(tmp_model, h = w, xreg = xreg_future)$mean)[w]
+      draws <- rnorm(d, mean = pt_forecast, sd = sigma)
+    }
 
     # Assemble one-row-per-location result (wide by draw)
     draws_dt <- as.data.table(t(draws))
