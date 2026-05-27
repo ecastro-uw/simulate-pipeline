@@ -89,7 +89,7 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
 
           weights <- create_weights(fit$optim$bestmem)
           fit_stats_dt <- data.table(
-            convergence      = 0L,
+            convergence      = NA_integer_,
             objective_value  = fit$optim$bestval,
             n_function_evals = fit$optim$nfeval,
             message          = NA_character_
