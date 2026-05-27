@@ -4,6 +4,7 @@
 ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
 
   source(file.path(pipeline_inputs$code_dir, "pipeline/model_performance_measures.R"))
+  library(DEoptim)
 
   # Set some values
   configs <- pipeline_inputs$configs
@@ -34,41 +35,66 @@ ensemble <- function(obs_dt, preds_dt, pipeline_inputs){
           message        = NA_character_
         )
       } else {
-        optim_method <- ifelse(configs$perform_meas == 'MSE', 'L-BFGS-B', 'Nelder-Mead')
         maxit <- 5000*(length(vals)+1)
-        fit <- optim(par = vals,
-                     fn = perform_func,
-                     forecasts = forecasts_subset,
-                     observations = obs_dt,
-                     list_of_models = list_of_models,
-                     d=d,
-                     method = optim_method,
-                     control = list(maxit = maxit))
-        
-        # If optim fails, re-try with different starting point
-        n_restarts <- 3
-        restart_attempt <- 0
-        while (fit$convergence == 10 && restart_attempt < n_restarts) {
-          restart_attempt <- restart_attempt + 1
-          new_start_vals <- vals + rnorm(length(vals), sd = 1)
-          fit_new <- optim(par = new_start_vals,
-                           fn = perform_func,
-                           forecasts = forecasts_subset,
-                           observations = obs_dt,
-                           list_of_models = list_of_models,
-                           d=d,
-                           method = optim_method,
-                           control = list(maxit = maxit))
-          if (fit_new$value < fit$value) fit <- fit_new
+
+        if (configs$perform_meas == 'MSE') {
+          # L-BFGS-B for MSE (smooth, gradient-friendly objective)
+          fit <- optim(par = vals,
+                       fn = perform_func,
+                       forecasts = forecasts_subset,
+                       observations = obs_dt,
+                       list_of_models = list_of_models,
+                       d = d,
+                       method = 'L-BFGS-B',
+                       control = list(maxit = maxit))
+
+          # If optim fails, re-try with different starting point
+          n_restarts <- 3
+          restart_attempt <- 0
+          while (fit$convergence == 10 && restart_attempt < n_restarts) {
+            restart_attempt <- restart_attempt + 1
+            new_start_vals <- vals + rnorm(length(vals), sd = 1)
+            fit_new <- optim(par = new_start_vals,
+                             fn = perform_func,
+                             forecasts = forecasts_subset,
+                             observations = obs_dt,
+                             list_of_models = list_of_models,
+                             d = d,
+                             method = 'L-BFGS-B',
+                             control = list(maxit = maxit))
+            if (fit_new$value < fit$value) fit <- fit_new
+          }
+
+          weights <- create_weights(fit$par)
+          fit_stats_dt <- data.table(
+            convergence      = fit$convergence,
+            objective_value  = fit$value,
+            n_function_evals = fit$counts[['function']],
+            message          = ifelse(is.null(fit$message), NA_character_, fit$message)
+          )
+        } else {
+          # DEoptim for WIS: population-based global optimizer, no restarts needed
+          fit <- DEoptim(fn             = perform_func,
+                         lower          = rep(-9, length(vals)),
+                         upper          = rep( 9, length(vals)),
+                         forecasts      = forecasts_subset,
+                         observations   = obs_dt,
+                         list_of_models = list_of_models,
+                         d              = d,
+                         control        = DEoptim.control(
+                           NP      = 10 * length(vals),
+                           itermax = 500,
+                           trace   = FALSE
+                         ))
+
+          weights <- create_weights(fit$optim$bestmem)
+          fit_stats_dt <- data.table(
+            convergence      = 0L,
+            objective_value  = fit$optim$bestval,
+            n_function_evals = fit$optim$nfeval,
+            message          = NA_character_
+          )
         }
-        
-        weights <- create_weights(fit$par)
-        fit_stats_dt <- data.table(
-          convergence      = fit$convergence,
-          objective_value  = fit$value,
-          n_function_evals = fit$counts[['function']],
-          message          = ifelse(is.null(fit$message), NA_character_, fit$message)
-        )
       }
 
       # Take a weighted average of model preds to get the ensemble preds.
