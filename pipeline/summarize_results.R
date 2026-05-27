@@ -13,12 +13,14 @@
 library(scoringutils, lib.loc = '/ihme/homes/ems2285/lib_for_scoringutils')
 library(data.table)
 library(ggplot2)
+library(RColorBrewer)
+library(colorspace)
 library(dplyr)
 library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260517.01'
+version_id <- '20260519.01'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
@@ -231,6 +233,7 @@ dt_all <- rbindlist(lapply(fit_files, function(x) {
   dt[, context_id := as.integer(gsub('.*_context_(\\d+)\\.csv$', '\\1', basename(x)))]
   dt
 }))
+fwrite(dt_all, paste0(root_dir,'/convergence_stats.csv'))
 
 # Print contexts with non-convergence
 dt_all[convergence!=0]
@@ -500,7 +503,7 @@ compare_pred_intervals <- function(context, save_pdf = FALSE){
   return(summary_dt)
 }
 
-compare_pred_intervals(7, save_pdf = T)
+compare_pred_intervals(10, save_pdf = F)
 
 
 
@@ -555,3 +558,123 @@ just_the_table <- function(context){
 
 all_contexts <- rbindlist(lapply(c(1:11,13:24), just_the_table))
 fwrite(all_contexts, paste0(root_dir,'/coverage_compare.csv'))
+
+
+# Compare predictions (OOS unadj) for each candidate model 
+compare_candidate_PIs <- function(context){
+  
+  # Resolve context
+  context_lookup <- fread(paste0(root_dir, '/inputs/context_lookup_table.csv'))
+  one_row <- context_lookup[context_id==context]
+  context_name <- toTitleCase(paste0(one_row$mandate_num, ' ', one_row$mandate_type, ' mandates among ',
+                                     one_row$pop_cat, ' ', ifelse(one_row$pol_cat=='D', 'Democratic', 
+                                                                  ifelse(one_row$pol_cat=='M', 'Moderate', 'Republican')), ' counties (context ', context,')'))
+  
+  # Define columns to keep from each file
+  col_names <- c('model','location_id', 'time_id', 'q2.5', 'mean', 'q97.5')
+  
+  # load the data and predictions
+  obs_dt <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id >= -3 & time_id <= -1, .(location_id, time_id, y)]
+  pred_dt <- fread(paste0(root_dir,'/batched_output/candidate_mods_context_',context,'.csv'))[time_id<=-1, .SD, .SDcols=col_names]
+  n_models <- length(unique(pred_dt$model))
+  
+  # Define factor (each model id gets its own error bar)
+  model_levels <- unique(pred_dt$model)
+  pred_dt[, model := factor(model, levels = model_levels)]
+  
+  # Define colors (each class of models is color coded)
+  pred_dt[, model_num := as.numeric(gsub('model_','',model))]
+  pred_dt[, model_group := ifelse(model_num %in% 1:2, 'Naive',
+                                ifelse(model_num %in% 3:11, 'OLS', 
+                                       ifelse(model_num %in% 12:20, 'GLS',
+                                              ifelse(model_num %in% 21:29, 'LME', 'Misc'))))]
+  model_group_levels <- unique(pred_dt$model_group)
+  pred_dt[, model_group := factor(model_group, levels = model_group_levels)]
+  colors <- setNames(darken(brewer.pal(5, "Spectral"), amount=0.3), model_group_levels)
+  
+  # Define jitter 
+  offsets <- seq(-0.4, 0.4, length.out = n_models)
+  offset_map <- setNames(offsets, levels(pred_dt$model))
+  pred_dt[, x_jitter := time_id + offset_map[as.character(model)]]
+  
+  # Enumerate locations
+  loc_ids <- unique(obs_dt$location_id)
+  
+  # Build individual plots
+  plot_one_loc <- function(loc_id){
+    
+    p <- ggplot() +
+      # Prediction interval error bars (jittered)
+      geom_errorbar(
+        data = pred_dt[location_id == loc_id],
+        aes(x = x_jitter, y = mean, ymin = q2.5, ymax = q97.5, color = model_group),
+        width = 0.1, linewidth = 0.8, alpha = 0.85
+      ) +
+      # Observed points
+      geom_point(
+        data = obs_dt[location_id == loc_id],
+        aes(x = time_id, y = y),
+        shape = 23, fill = "red", color = "red",
+        size = 2.5, stroke = 1.2
+      ) +
+      geom_segment(
+        data = obs_dt[location_id == loc_id], 
+        aes(x=time_id - 0.4, xend=time_id + 0.4, y=y, yend=y),
+        color="red"
+      ) +
+      scale_x_continuous(
+        name = "",
+        breaks = c(-3, -2, -1)
+      ) +
+      scale_y_continuous(name = "") +
+      scale_color_manual(values = colors, name = "") +
+      theme_classic() +
+      theme(
+        legend.text = element_text(size = 10),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10)
+      )
+    
+    # Strip legend (one legend will be added back)
+    p + theme(legend.position = "none")
+    return(p)
+  }
+  
+  # make plots for all locations
+  plots <- lapply(loc_ids, plot_one_loc)
+  
+  # Extract legend from a single full plot
+  legend_plot <- ggplot() +
+    geom_point(
+      data = pred_dt[location_id == loc_ids[1]],
+      aes(x = x_jitter, y = mean, color = model_group),
+      size = 2
+    ) +
+    scale_color_manual(values = colors, name = "") +
+    theme_classic() +
+    theme(
+      legend.text = element_text(size = 11),
+      legend.position = "bottom"
+    )
+  
+  shared_legend <- cowplot::get_legend(legend_plot)
+  
+  # Combine plots + legend with patchwork
+  grid <- patchwork::wrap_plots(plots) +
+    patchwork::plot_layout(guides = "collect", ncol = 4) &
+    theme(legend.position = "bottom")
+  
+  # Add a title
+  grid <- grid + patchwork::plot_annotation(title = context_name)
+  
+  return(grid)
+}
+
+path <- paste0(root_dir,'/compare_candidate_model_PIs.pdf')
+pdf(path, width = 11, height=8)
+compare_candidate_PIs(7)
+compare_candidate_PIs(8)
+compare_candidate_PIs(9)
+compare_candidate_PIs(10)
+compare_candidate_PIs(11)
+dev.off()

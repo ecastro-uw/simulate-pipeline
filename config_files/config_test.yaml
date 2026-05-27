@@ -1,5 +1,5 @@
 ---
-lookup_suffix: inv1_0510
+lookup_suffix: TEST
 perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
@@ -11,5 +11,5 @@ save_all_time_steps?: yes
 save_pre_adj_draws?: no
 save_all_pre_adj_time_steps?: yes
 save_candidate_draws?: no
-use_param_uncertainty: yes #whether to incorporate parameter uncertainty in predictions
+use_param_uncertainty: no #whether to incorporate parameter uncertainty in predictions
 ...
