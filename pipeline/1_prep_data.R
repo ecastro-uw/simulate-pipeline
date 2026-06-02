@@ -33,6 +33,10 @@ prep_data <- function(pipeline_inputs){
   
   ### (1) First, pull in timing data for event of interest
   event_dt <- fread(paste0(input_subdir, imposition,'_',mandate,'_close.csv'))[location_id %in% location_list]
+  
+  ### TEMP - ALTER MANDATE IMPOSITION TIMING ###
+  #event_dt[, onset_date := onset_date - weeks(2)] ##DELETE AFTER TESTING
+  
   if(nrow(event_dt)==0){
     stop(paste("Location set is incompatible with desired mandate & imposition: these locations did not impose",
                imposition, mandate,"mandates."))

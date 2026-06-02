@@ -6,11 +6,13 @@
 library(argparse)
 library(data.table)
 library(yaml)
+library(lubridate)
 library(boot)
 library(MASS)
 library(forecast)
 library(nlme)
 library(scoringutils, lib.loc = '/ihme/homes/ems2285/lib_for_scoringutils')
+#library(DEoptim, lib.loc='/ihme/homes/ems2285/lib_for_DEoptim')
 
 
 # Get arguments from parser

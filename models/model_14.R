@@ -26,45 +26,46 @@ model_14 <- function(dataset, w, d, use_param_uncertainty = TRUE) {
   theta  <- params[["Theta1"]]
   sigma  <- fit$sigma
 
-  # Compute last innovation per location via ARMA(1,1) filter:
+  # Compute last innovation per location:
   # eta_t = eps_t - phi*eps_{t-1} - theta*eta_{t-1}
   dt_complete[, gls_resid := residuals(fit)]
   loc_stats <- dt_complete[, {
     eps     <- gls_resid
     n       <- .N
     eta     <- numeric(n)
-    eta[1L] <- eps[1L]
-    for (j in 2L:n) eta[j] <- eps[j] - phi * eps[j - 1L] - theta * eta[j - 1L]
+    eta[1] <- eps[1]
+    for (j in 2:n) eta[j] <- eps[j] - phi * eps[j - 1] - theta * eta[j - 1]
     .(last_resid = eps[n], last_eta = eta[n])
   }, by = location_id]
 
-  # Build forecast data: deaths_lag2_sum at T+1 = deaths_pc[T] + deaths_pc[T-1]
+  # Build forecast data: deaths_lag2_sum = deaths_pc[t] + deaths_pc[t-1]
   last_time_step <- max(dt$time_id)
-  last_two <- dt[time_id %in% c(last_time_step - 1L, last_time_step),
+  last_two <- dt[time_id %in% c(last_time_step - 1, last_time_step),
                  .(location_id, time_id, deaths_pc)]
-  new_dt <- last_two[, .(time_id         = last_time_step + w,
-                         deaths_lag2_sum = sum(deaths_pc)),
-                     by = location_id]
+  new_dt <- last_two[, .(
+    time_id         = last_time_step + w,
+    deaths_lag2_sum = sum(deaths_pc)
+    ), by = location_id]
 
   # Design matrix
-  X_new <- model.matrix(~deaths_lag2_sum, data = new_dt)  # n_loc x 2
+  X_new <- model.matrix(~deaths_lag2_sum, data = new_dt)
 
   # w-step-ahead AR+MA correction: phi^w * eps_T + phi^{w-1} * theta * eta_T
   loc_ord       <- loc_stats[new_dt[, .(location_id)], on = "location_id"]
-  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1L) * theta * loc_ord$last_eta
+  ar_correction <- phi^w * loc_ord$last_resid + phi^(w - 1) * theta * loc_ord$last_eta
 
   # Draw beta from multivariate normal (coefficient uncertainty)
   if (use_param_uncertainty) {
     beta_draws <- mvrnorm(d, mu = coef(fit), Sigma = vcov(fit))
-    if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1L)
+    if (!is.matrix(beta_draws)) beta_draws <- matrix(beta_draws, nrow = 1)
   } else {
     beta_draws <- matrix(rep(coef(fit), d), nrow = d, byrow = TRUE)
   }
 
-  # Predictive draws: d x n_loc -> transpose to n_loc x d
+  # Predictive draws (fitted draws + noise + ar correction)
   fitted_draws <- beta_draws %*% t(X_new)
   noise        <- matrix(rnorm(d * nrow(new_dt), 0, sigma), nrow = d, ncol = nrow(new_dt))
-  pred_mat     <- t(sweep(fitted_draws + noise, 2L, ar_correction, "+"))
+  pred_mat     <- t(sweep(fitted_draws + noise, 2, ar_correction, "+"))
 
   draws_dt <- as.data.table(pred_mat)
   setnames(draws_dt, paste0("draw_", seq_len(d)))

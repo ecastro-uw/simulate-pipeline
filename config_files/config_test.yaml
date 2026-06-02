@@ -1,5 +1,5 @@
 ---
-lookup_suffix: TEST
+lookup_suffix: two_weeks_POST
 perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws

@@ -33,7 +33,7 @@ model_5 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   
   # For the forecast row, deaths_lag2_sum = deaths_pc at t + deaths_pc at t-1
   new_dt <- last_two[, .(
-    time_id        = last_time_step + 1,
+    time_id        = last_time_step + w,
     lagged_y       = y[time_id == last_time_step],
     deaths_lag2_sum = sum(deaths_pc)   # sums t and t-1
   ), by = location_id]

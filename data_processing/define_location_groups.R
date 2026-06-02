@@ -22,7 +22,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0510'     # For distinguishing output file names
+suffix    <- 'one_week_PRE_v2'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -83,6 +83,9 @@ for (event in event_list) {
   cols_to_keep <- c('location_id', 'onset_date')
   if (mandate_num == 'second') cols_to_keep <- c(cols_to_keep, 'prev_lift')
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
+  
+  ### TEMP - ALTER MANDATE IMPOSITION ###
+  event_dt[, onset_date := onset_date - weeks(1)] ##DELETE AFTER TESTING
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
   if (mandate_num == 'second') {
@@ -293,14 +296,13 @@ check_mandates <- function(context) {
                          by = location_id, 
                          .SDcols = col_names
   ][!is.na(pct_edu)]
-
-  # If there is any variation, include as a covariate
-  result <- weekly_dt[, lapply(.SD, function(x) length(unique(x))), .SDcols = col_names]
-  verdict <- result[, lapply(.SD, function(x) ifelse(x > 1, 1, 0)), .SDcols = col_names]
   
-  # old criteria: 10-90% of location-weeks with mandate in effect the whole week
-  #result  <- weekly_dt[, lapply(.SD, function(x) mean(x == 1)), .SDcols = col_names]
-  #verdict <- result[, lapply(.SD, function(x) ifelse(x > mandate_lo & x < mandate_hi, 1, 0)), .SDcols = col_names]
+  # If the second most common value has >=5 observations, include as a covariate
+  result <- weekly_dt[, lapply(.SD, function(x) {
+    val_counts <- sort(table(x), decreasing = TRUE)
+    if (length(val_counts) >= 2) val_counts[2] else 0
+  }), .SDcols = col_names]
+  verdict <- result[, lapply(.SD, function(x) ifelse(x >= 5, 1, 0)), .SDcols = col_names]
   
   setnames(verdict, col_names, gsub('pct_', '', col_names))
   verdict$context_id <- context
@@ -373,26 +375,6 @@ context_lookup[, `:=`(
   model_9  = ifelse(gym == 1, 1, 0),                                                # OLS: lagged y + gym
   model_10  = ifelse(bar == 1, 1, 0),                                               # OLS: lagged y + bar
   model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # OLS: lagged y + sum of mandates
-  # GLS with ARMA(1,1) errors
-  model_12 = 1,                                                                     # GLS: 1
-  model_13 = ifelse(cases == 1, 1, 0),                                              # GLS: cases
-  model_14 = ifelse(deaths == 1, 1, 0),                                             # GLS: deaths
-  model_15 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # GLS: cases + deaths
-  model_16 = ifelse(edu == 1, 1, 0),                                                # GLS: schools
-  model_17 = ifelse(gathering == 1, 1, 0),                                          # GLS: gatherings
-  model_18 = ifelse(gym == 1, 1, 0),                                                # GLS: gym
-  model_19 = ifelse(bar == 1, 1, 0),                                                # GLS: bar
-  model_20 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # GLS: sum of mandates
-  # LME with location random intercepts and ARMA(1,1) errors
-  model_21 = 1,                                                                     # LME: (1|location)
-  model_22 = ifelse(cases == 1, 1, 0),                                              # LME: cases
-  model_23 = ifelse(deaths == 1, 1, 0),                                             # LME: deaths
-  model_24 = ifelse(cases == 1 & deaths == 1, 1, 0),                                # LME: cases + deaths
-  model_25 = ifelse(edu == 1, 1, 0),                                                # LME: schools
-  model_26 = ifelse(gathering == 1, 1, 0),                                          # LME: gatherings
-  model_27 = ifelse(gym == 1, 1, 0),                                                # LME: gym
-  model_28 = ifelse(bar == 1, 1, 0),                                                # LME: bar
-  model_29 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # LME: sum of mandates
   # Miscellaneous
   model_30 = 1,                                                                     # exponential smoothing
   model_31 = 0                                                                      # neural network
