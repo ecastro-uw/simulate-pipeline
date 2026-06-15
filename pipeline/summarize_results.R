@@ -169,6 +169,80 @@ effect_size_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type,
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
+# Meta-analytic version: pools per-location effect sizes via inverse-variance weighting.
+# Per-location SE is derived from the 95% PI: SE_i = (q97.5 - q2.5) / 3.92.
+# Reports both fixed-effects (FE) and random-effects (RE, DerSimonian-Laird) pooled estimates,
+# along with heterogeneity statistics (Cochran's Q, I-squared, tau-squared).
+calc_eff_size_meta <- function(context){
+
+  # load predictions
+  pi <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==0, .(location_id, q2.5, q50, q97.5, p_val)]
+
+  # load observed value
+  obs <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id==0, .(location_id, y)]
+
+  # combine and compute per-location effect size and SE
+  dt <- merge(obs, pi, by='location_id')
+  dt[, eff_size := y - q50]
+  dt[, se       := (q97.5 - q2.5) / 3.92]   # 95% PI -> SE assuming normal
+  dt[, w        := 1 / se^2]                 # inverse-variance weights
+
+  n <- nrow(dt)
+
+  # --- Fixed-effects pooled estimate ---
+  fe_est <- sum(dt$w * dt$eff_size) / sum(dt$w)
+  fe_se  <- sqrt(1 / sum(dt$w))
+
+  # --- Heterogeneity (Cochran's Q, I-squared) ---
+  Q  <- sum(dt$w * (dt$eff_size - fe_est)^2)
+  df <- n - 1
+  I2 <- max(0, (Q - df) / Q) * 100   # I-squared in %
+
+  # --- Random-effects: DerSimonian-Laird tau^2 ---
+  c_val  <- sum(dt$w) - sum(dt$w^2) / sum(dt$w)
+  tau2   <- max(0, (Q - df) / c_val)
+
+  # RE weights and pooled estimate
+  dt[, w_re := 1 / (se^2 + tau2)]
+  re_est <- sum(dt$w_re * dt$eff_size) / sum(dt$w_re)
+  re_se  <- sqrt(1 / sum(dt$w_re))
+
+  # binomial signal-detection p-value (same as IQR version)
+  k       <- nrow(dt[p_val < 0.05])
+  binom_p <- round(pbinom(k, n, 0.05, lower.tail = FALSE), 2)
+
+  temp_dt <- data.table(
+    context_id      = context,
+    n_locs          = n,
+    fe_est          = round(fe_est, 3),
+    fe_ci_lo        = round(fe_est - 1.96 * fe_se, 3),
+    fe_ci_hi        = round(fe_est + 1.96 * fe_se, 3),
+    re_est          = round(re_est, 3),
+    re_ci_lo        = round(re_est - 1.96 * re_se, 3),
+    re_ci_hi        = round(re_est + 1.96 * re_se, 3),
+    tau2            = round(tau2, 4),
+    Q_stat          = round(Q, 2),
+    I2_pct          = round(I2, 1),
+    num_sig_locs    = k,
+    eff_pct_neg     = round((sum(dt$eff_size < 0) / n) * 100, 1),
+    pct_sig_p       = round((sum(dt$p_val < 0.05) / n) * 100, 1),
+    binom_p         = binom_p
+  )
+
+  # formatted summary strings
+  temp_dt[, fe_est_final := paste0(fe_est, ' (', fe_ci_lo, ', ', fe_ci_hi, ')')]
+  temp_dt[, re_est_final := paste0(re_est, ' (', re_ci_lo, ', ', re_ci_hi, ')')]
+
+  return(temp_dt)
+}
+
+effect_size_meta_dt <- rbindlist(lapply(context_lookup$context_id, calc_eff_size_meta))
+effect_size_meta_dt <- merge(context_lookup[, .(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
+                             effect_size_meta_dt, by = 'context_id')
+# Save table
+fwrite(effect_size_meta_dt, paste0(root_dir, '/effect_size_meta_summary.csv'))
+
+
 ### (B) Meta-regression
 fit <- lm(eff_size_median ~ mandate_type + mandate_num + pop_cat + pol_cat, data=effect_size_dt)
 summary(fit)
