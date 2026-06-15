@@ -1,0 +1,25 @@
+context_id,country,ADMN,mandate_type,mandate_num,outcome,pop_cat,pol_cat,N,model_1,model_2,model_3,model_4,model_5,model_6,model_7,model_8,model_9,model_10,model_11
+1,USA,2,restaurant,first,visits to restaurants,big,D,153,1,1,1,1,0,0,0,0,0,0,0
+2,USA,2,restaurant,first,visits to restaurants,big,M,182,1,1,1,1,0,0,0,0,0,0,0
+3,USA,2,restaurant,first,visits to restaurants,big,R,237,1,1,1,1,0,0,0,0,0,0,0
+4,USA,2,restaurant,first,visits to restaurants,small,D,142,1,1,1,0,0,0,0,0,0,0,0
+5,USA,2,restaurant,first,visits to restaurants,small,M,228,1,1,1,0,0,0,0,0,0,0,0
+6,USA,2,restaurant,first,visits to restaurants,small,R,2016,1,1,1,0,0,0,0,0,0,0,0
+7,USA,2,restaurant,second,visits to restaurants,big,D,29,1,1,1,1,1,1,1,1,1,1,1
+8,USA,2,restaurant,second,visits to restaurants,big,M,46,1,1,1,1,1,1,1,1,1,1,1
+9,USA,2,restaurant,second,visits to restaurants,big,R,34,1,1,1,1,1,1,1,1,1,1,1
+10,USA,2,restaurant,second,visits to restaurants,small,D,13,1,1,1,1,1,1,1,0,0,1,1
+11,USA,2,restaurant,second,visits to restaurants,small,M,41,1,1,1,1,1,1,1,1,1,1,1
+12,USA,2,restaurant,second,visits to restaurants,small,R,297,1,1,1,1,1,1,1,1,1,1,1
+13,USA,2,bar,first,visits to bars,big,D,151,1,1,1,1,0,0,0,0,0,0,0
+14,USA,2,bar,first,visits to bars,big,M,167,1,1,1,1,0,0,0,0,0,0,0
+15,USA,2,bar,first,visits to bars,big,R,192,1,1,1,0,0,0,0,0,0,0,0
+16,USA,2,bar,first,visits to bars,small,D,44,1,1,1,0,0,0,0,0,0,0,0
+17,USA,2,bar,first,visits to bars,small,M,74,1,1,1,0,0,0,0,0,0,0,0
+18,USA,2,bar,first,visits to bars,small,R,358,1,1,1,0,0,0,0,0,0,0,0
+19,USA,2,bar,second,visits to bars,big,D,16,1,1,1,1,1,1,1,1,0,0,1
+20,USA,2,bar,second,visits to bars,big,M,23,1,1,1,1,1,1,1,1,0,0,1
+21,USA,2,bar,second,visits to bars,big,R,7,1,1,1,1,1,1,1,0,0,0,1
+22,USA,2,bar,second,visits to bars,small,D,10,1,1,1,1,1,1,1,1,0,0,1
+23,USA,2,bar,second,visits to bars,small,M,18,1,1,1,1,1,1,1,1,1,0,1
+24,USA,2,bar,second,visits to bars,small,R,53,1,1,1,1,1,1,1,1,1,0,1

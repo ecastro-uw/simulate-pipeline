@@ -22,7 +22,7 @@ library(lubridate)
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'one_week_PRE_v2'     # For distinguishing output file names
+suffix    <- 'inv1_0601'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -85,7 +85,7 @@ for (event in event_list) {
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
   
   ### TEMP - ALTER MANDATE IMPOSITION ###
-  event_dt[, onset_date := onset_date - weeks(1)] ##DELETE AFTER TESTING
+  #event_dt[, onset_date := onset_date + weeks(2)] ##DELETE AFTER TESTING
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
   if (mandate_num == 'second') {
@@ -297,12 +297,12 @@ check_mandates <- function(context) {
                          .SDcols = col_names
   ][!is.na(pct_edu)]
   
-  # If the second most common value has >=5 observations, include as a covariate
+  # If the second most common value has >5 observations, include as a covariate
   result <- weekly_dt[, lapply(.SD, function(x) {
     val_counts <- sort(table(x), decreasing = TRUE)
     if (length(val_counts) >= 2) val_counts[2] else 0
   }), .SDcols = col_names]
-  verdict <- result[, lapply(.SD, function(x) ifelse(x >= 5, 1, 0)), .SDcols = col_names]
+  verdict <- result[, lapply(.SD, function(x) ifelse(x > 5, 1, 0)), .SDcols = col_names]
   
   setnames(verdict, col_names, gsub('pct_', '', col_names))
   verdict$context_id <- context
@@ -374,10 +374,10 @@ context_lookup[, `:=`(
   model_8  = ifelse(gathering == 1, 1, 0),                                          # OLS: lagged y + gatherings
   model_9  = ifelse(gym == 1, 1, 0),                                                # OLS: lagged y + gym
   model_10  = ifelse(bar == 1, 1, 0),                                               # OLS: lagged y + bar
-  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0),         # OLS: lagged y + sum of mandates
+  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0)         # OLS: lagged y + sum of mandates
   # Miscellaneous
-  model_30 = 1,                                                                     # exponential smoothing
-  model_31 = 0                                                                      # neural network
+  #model_30 = 1,                                                                     # exponential smoothing
+  #model_31 = 0                                                                      # neural network
 )]
 
 
@@ -385,7 +385,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:31))
+                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:11))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 

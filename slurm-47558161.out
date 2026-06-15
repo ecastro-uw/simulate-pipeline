@@ -1,0 +1,2 @@
+SINGULARITY_NAME: readonly variable
+slurmstepd: error: *** JOB 47558161 ON int-slurm-sarchive-p0008 CANCELLED AT 2026-06-02T21:32:55 DUE TO TIME LIMIT ***

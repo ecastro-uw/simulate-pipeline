@@ -20,7 +20,7 @@ library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260531.01'
+version_id <- '20260601.05'
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
