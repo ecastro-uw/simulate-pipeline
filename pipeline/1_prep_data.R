@@ -134,52 +134,59 @@ prep_data <- function(pipeline_inputs){
   }
   
   
-  ### (3) Finally, add covariate data
-  ## 3(a) Other mandates
-  mandate_dt <- fread(paste0(input_subdir,'other_mandate_time_series.csv'))[location_id %in% location_list]
-  outcome_dt <- merge(outcome_dt, mandate_dt, by=c('location_id','date'), all.x=T)
-  
-  ## 3(b) Covid cases and deaths (per 10K pop)
-  covid_dt <- fread(paste0(input_subdir,'covid_cases_deaths.csv'))[location_id %in% location_list]
-  pop_dt   <- fread(paste0(input_subdir,'population.csv'))[location_id %in% location_list]
-  covid_dt <- merge(covid_dt, pop_dt, by='location_id', all.x=T)
-  outcome_dt <- merge(outcome_dt,
-                      covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
-                      by=c('location_id', 'date'), all.x=T)
-  
-  # Check for missingness 
-  covar_list <- c('primary_edu','gatherings50i100o','gym_pool_leisure_close',
-                  'non_essential_retail_close', 'stay_at_home', 'dining_close', 'bar_close',
-                  'daily_cases', 'daily_deaths', 'pop')
-  missing_covars <- data.table(location_id=integer(), covariate=character())
-  for(covar in covar_list){
-    temp <- data.table(location_id = unique(outcome_dt[is.na(get(covar)),location_id]),
-                       covariate = covar)
-    missing_covars <- rbind(missing_covars, temp)
+  ### (3) Finally, add covariate data (if fitting models with covariates)
+  model_nums <- as.numeric(gsub('model_', '', pipeline_inputs$configs$models))
+  if(any(model_nums > 3)){
+    ## 3(a) Other mandates
+    mandate_dt <- fread(paste0(input_subdir,'other_mandate_time_series.csv'))[location_id %in% location_list]
+    outcome_dt <- merge(outcome_dt, mandate_dt, by=c('location_id','date'), all.x=T)
+    
+    ## 3(b) Covid cases and deaths (per 10K pop)
+    covid_dt <- fread(paste0(input_subdir,'covid_cases_deaths.csv'))[location_id %in% location_list]
+    pop_dt   <- fread(paste0(input_subdir,'population.csv'))[location_id %in% location_list]
+    covid_dt <- merge(covid_dt, pop_dt, by='location_id', all.x=T)
+    outcome_dt <- merge(outcome_dt,
+                        covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
+                        by=c('location_id', 'date'), all.x=T)
+    
+    # Check for missingness 
+    covar_list <- c('primary_edu','gatherings50i100o','gym_pool_leisure_close',
+                    'non_essential_retail_close', 'stay_at_home', 'dining_close', 'bar_close',
+                    'daily_cases', 'daily_deaths', 'pop')
+    missing_covars <- data.table(location_id=integer(), covariate=character())
+    for(covar in covar_list){
+      temp <- data.table(location_id = unique(outcome_dt[is.na(get(covar)),location_id]),
+                         covariate = covar)
+      missing_covars <- rbind(missing_covars, temp)
+    }
+    for(loc in unique(missing_covars$location_id)){
+      one_row <- data.table(
+        location_id = loc,
+        reason = paste('Missing covariate data: ', paste(missing_covars[location_id==loc,covariate], collapse=', '))
+      )
+      problem_log <- rbind(problem_log, one_row)
+    }
+    # Drop locations with missing covariate data
+    outcome_dt <- outcome_dt[! location_id %in% unique(missing_covars$location_id)]
   }
-  for(loc in unique(missing_covars$location_id)){
-    one_row <- data.table(
-      location_id = loc,
-      reason = paste('Missing covariate data: ', paste(missing_covars[location_id==loc,covariate], collapse=', '))
-    )
-    problem_log <- rbind(problem_log, one_row)
-  }
-  # Drop locations with missing covariate data
-  outcome_dt <- outcome_dt[! location_id %in% unique(missing_covars$location_id)]
-  
   
   ### (4) Summarize to weekly level
-  weekly_dt <- outcome_dt[, .(v = sum(v),
-                              pct_edu = sum(primary_edu)/7,
-                              pct_gathering = sum(gatherings50i100o)/7,
-                              pct_gym = sum(gym_pool_leisure_close)/7,
-                              pct_retail = sum(non_essential_retail_close)/7,
-                              pct_sah = sum(stay_at_home)/7,
-                              pct_dining = sum(dining_close)/7,
-                              pct_bar = sum(bar_close)/7,
-                              cases_pc = sum(daily_cases)/unique(pop)*10000,
-                              deaths_pc = sum(daily_deaths)/unique(pop)*10000),
-                          by = c('location_id', 'time_id')]
+  if(any(model_nums > 3)){
+    weekly_dt <- outcome_dt[, .(v = sum(v),
+                                pct_edu = sum(primary_edu)/7,
+                                pct_gathering = sum(gatherings50i100o)/7,
+                                pct_gym = sum(gym_pool_leisure_close)/7,
+                                pct_retail = sum(non_essential_retail_close)/7,
+                                pct_sah = sum(stay_at_home)/7,
+                                pct_dining = sum(dining_close)/7,
+                                pct_bar = sum(bar_close)/7,
+                                cases_pc = sum(daily_cases)/unique(pop)*10000,
+                                deaths_pc = sum(daily_deaths)/unique(pop)*10000),
+                            by = c('location_id', 'time_id')]
+  } else {
+    weekly_dt <- outcome_dt[, .(v = sum(v)),
+                            by = c('location_id', 'time_id')]
+  }
   
   # For safegraph, normalize visits based upon baseline period activity
   if(data_source=='safegraph'){
@@ -190,9 +197,13 @@ prep_data <- function(pipeline_inputs){
     # Outcome measure is the log of normalized visit counts, with an offset to avoid log(0)
     dt <- weekly_dt[, y := log((v + 0.5) / mean_base)]
     
-    dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
-                 pct_edu, pct_gathering, pct_gym, pct_retail,
-                 pct_sah, pct_dining, pct_bar)]
+    if(any(model_nums > 3)){
+      dt <- dt[, .(location_id, time_id, y, cases_pc, deaths_pc,
+                   pct_edu, pct_gathering, pct_gym, pct_retail,
+                   pct_sah, pct_dining, pct_bar)]
+    } else {
+      dt <- dt[, .(location_id, time_id, y)]
+    }
   }
 
   # Append two lag-padding weeks so that lagged covariate terms are defined
@@ -200,45 +211,46 @@ prep_data <- function(pipeline_inputs){
   # excluded from model fits by each model's NA-dropping logic.
   # Two weeks are needed to cover the 2-week lagged sum for cases/deaths;
   # the nearer padding week also supplies the 1-week lagged mandate values.
-  lag_pad_wks <- 2L
-  
-  train_start_per_loc <- outcome_dt[
-    , .(train_start = min(date), onset_date = unique(onset_date)),
-    by = location_id
-  ][location_id %in% dt$location_id]
-  
-  pad_daily <- merge(
-    covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
-    train_start_per_loc, by = 'location_id'
-  )
-  
-  pad_daily <- pad_daily[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
+  if(any(model_nums > 3)){
+    lag_pad_wks <- 2L
     
-  pad_daily <- merge(
-    pad_daily,
-    mandate_dt[, .(location_id, date, primary_edu, gatherings50i100o,
-                   gym_pool_leisure_close, non_essential_retail_close,
-                   stay_at_home, dining_close, bar_close)],
-    by = c('location_id', 'date'), all.x = TRUE
-  )
-  
-  pad_daily[, time_id := as.numeric(floor((date - onset_date) / 7))]
-  
-  pad_weekly <- pad_daily[, .(
-    y             = NA_real_,
-    cases_pc      = sum(daily_cases)/unique(pop)*10000,
-    deaths_pc     = sum(daily_deaths)/unique(pop)*10000,
-    pct_edu       = sum(primary_edu)/7,
-    pct_gathering = sum(gatherings50i100o)/7,
-    pct_gym       = sum(gym_pool_leisure_close)/7,
-    pct_retail    = sum(non_essential_retail_close)/7,
-    pct_sah       = sum(stay_at_home)/7,
-    pct_dining    = sum(dining_close)/7,
-    pct_bar       = sum(bar_close)/7
-  ), by = c('location_id', 'time_id')]
-  
-  dt <- rbind(dt, pad_weekly)
-
+    train_start_per_loc <- outcome_dt[
+      , .(train_start = min(date), onset_date = unique(onset_date)),
+      by = location_id
+    ][location_id %in% dt$location_id]
+    
+    pad_daily <- merge(
+      covid_dt[, .(location_id, date, daily_cases, daily_deaths, pop)],
+      train_start_per_loc, by = 'location_id'
+    )
+    
+    pad_daily <- pad_daily[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
+      
+    pad_daily <- merge(
+      pad_daily,
+      mandate_dt[, .(location_id, date, primary_edu, gatherings50i100o,
+                     gym_pool_leisure_close, non_essential_retail_close,
+                     stay_at_home, dining_close, bar_close)],
+      by = c('location_id', 'date'), all.x = TRUE
+    )
+    
+    pad_daily[, time_id := as.numeric(floor((date - onset_date) / 7))]
+    
+    pad_weekly <- pad_daily[, .(
+      y             = NA_real_,
+      cases_pc      = sum(daily_cases)/unique(pop)*10000,
+      deaths_pc     = sum(daily_deaths)/unique(pop)*10000,
+      pct_edu       = sum(primary_edu)/7,
+      pct_gathering = sum(gatherings50i100o)/7,
+      pct_gym       = sum(gym_pool_leisure_close)/7,
+      pct_retail    = sum(non_essential_retail_close)/7,
+      pct_sah       = sum(stay_at_home)/7,
+      pct_dining    = sum(dining_close)/7,
+      pct_bar       = sum(bar_close)/7
+    ), by = c('location_id', 'time_id')]
+    
+    dt <- rbind(dt, pad_weekly)
+  }
   
   # Save out the problem log
   if(nrow(problem_log)>0){

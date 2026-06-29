@@ -87,6 +87,7 @@ fwrite(result$pre_adj_output,       paste0(out_dir,'/batched_output/pred_pre_', 
 fwrite(result$pre_adj_output_v2,    paste0(out_dir,'/batched_output/pred_pre_v2_',    suffix,'.csv'))
 fwrite(result$results_output,       paste0(out_dir,'/batched_output/pred_adj_',      suffix,'.csv'))
 fwrite(result$wis_results,          paste0(out_dir,'/batched_output/pred_adj_M2_',   suffix,'.csv'))
+fwrite(result$theta_draws,          paste0(out_dir,'/batched_output/thetas_',        suffix,'.csv'))
 fwrite(result$weights_dt,           paste0(out_dir,'/batched_output/ens_weights_',   suffix,'.csv'))
 fwrite(result$fit_stats_dt,         paste0(out_dir,'/batched_output/ens_fit_stats_', suffix,'.csv'))
 fwrite(result$sigmas_dt,            paste0(out_dir,'/batched_output/sigmas_',        suffix,'.csv'))

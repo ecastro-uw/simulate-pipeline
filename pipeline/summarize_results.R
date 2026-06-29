@@ -20,13 +20,25 @@ library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260601.05'
+version_id <- '20260621.01'
+missing_contexts <- c(113)
+inv_num <- 2
 
 # dirs
 root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',version_id)
 
 # load context lookup file
 context_lookup <- fread(file.path(root_dir,'inputs/context_lookup_table.csv'))
+# allow for known missing contexts
+context_list <- context_lookup$context_id[-missing_contexts]
+
+# define context dimensions
+if (inv_num==1){
+  context_dims <- c('pop_cat', 'pol_cat')
+} 
+if (inv_num==2){
+  context_dims <- c('state_abbrev')
+}
 
 # Load the location hierarchy
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
@@ -87,10 +99,10 @@ build_performance_table <- function(context){
                         adj_skill   = round(calc_skill(context, adj=T),2))
   return(temp_dt)
 }
-performance_dt <- rbindlist(lapply(context_lookup$context_id, build_performance_table))
+performance_dt <- rbindlist(lapply(context_list, build_performance_table))
 
 # Add context info
-performance_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
+performance_dt <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_num', 'mandate_type', context_dims, 'N')],
                         performance_dt, by='context_id')
 
 # Save table
@@ -162,11 +174,80 @@ calc_eff_size <- function(context){
   return(temp_dt)
 }
 
-effect_size_dt <- rbindlist(lapply(context_lookup$context_id, calc_eff_size))
-effect_size_dt <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
+effect_size_dt <- rbindlist(lapply(context_list, calc_eff_size))
+effect_size_dt <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_num', 'mandate_type', context_dims, 'N')],
                         effect_size_dt, by='context_id')
 # Save table
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
+
+
+### (B) Meta Analysis
+calc_eff_size_meta <- function(context){
+  
+  # load thetas
+  thetas <- fread(paste0(root_dir,'/batched_output/thetas_context_',context,'.csv'))
+  draw_cols <- grep("^draw_", names(thetas), value = TRUE)
+  all_draws <- unlist(thetas[, ..draw_cols]) #vector of N locs x 1000 draws per loc
+  
+  point_est <- median(all_draws)
+  ci_95 <- quantile(all_draws, c(0.025, 0.975))
+  
+  temp_dt <- data.table(context_id = context,
+                        theta_median = round(point_est,2),
+                        theta_lower = ci_95[1],
+                        theta_upper = ci_95[2],
+                        CI_theta = paste0('(',round(ci_95[1],2),', ', round(ci_95[2],2),')'),
+                        direction = ifelse(ci_95[2] < 0, 'decrease', ifelse(ci_95[1] > 0, 'increase', 'indeterminate'))
+                        )
+  return(temp_dt)
+}
+effect_size_dt2 <- rbindlist(lapply(context_list, calc_eff_size_meta))
+effect_size_dt2 <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_num', 'mandate_type', context_dims, 'N')],
+                        effect_size_dt2, by='context_id')
+# Save table
+fwrite(effect_size_dt2, paste0(root_dir,'/effect_size_meta.csv'))
+
+
+
+
+calc_eff_size_meta <- function(context){
+  
+  # load predictions
+  pi <- fread(paste0(root_dir,'/batched_output/pred_adj_context_',context,'.csv'))[time_id==0, .(location_id, q2.5, q50, mean, q97.5, p_val)]
+  
+  # load observed value
+  obs <- fread(paste0(root_dir,'/batched_output/obs_context_',context,'.csv'))[time_id==0,.(location_id, y)]
+  
+  # combine
+  dt <- merge(obs,pi, by='location_id')
+  
+  # calculate per location effect size, SE, and weight
+  #dt[, eff_size := y - q50] # use mean or median?
+  dt[, eff_size := y - mean]
+  #ggplot(dt, aes(x=eff_size)) + geom_density() # check normality
+  dt[, se := (q97.5 - q2.5)/3.92] # calc SE assuming distr of eff_size is normal
+  dt[, w := 1/se^2] # calc inverse-variance weights
+  
+  # calculate pooled effect and SE
+  theta_pooled <- sum(dt$w * dt$eff_size) / sum(dt$w)
+  SE_pooled <- sqrt(1 / sum(dt$w))
+  
+  # calculate median and IQR of effect size across locations
+  temp_dt <- data.table(context_id = context,
+                        eff_size_pooled = round(theta_pooled,2),
+                        eff_size_LL = round(theta_pooled - 1.96*SE_pooled,1),
+                        eff_size_UL = round(theta_pooled + 1.96*SE_pooled,1)
+  )
+  
+  temp_dt[, eff_size_final := paste0(eff_size_pooled,' (',eff_size_LL,', ',eff_size_UL,')')]
+  
+  return(temp_dt)
+}
+effect_size_dt2 <- rbindlist(lapply(context_lookup$context_id, calc_eff_size_meta))
+effect_size_dt2 <- merge(context_lookup[,.(context_id, mandate_num, mandate_type, pop_cat, pol_cat, N)],
+                        effect_size_dt, by='context_id')
+
+
 
 
 ### (B) Meta-regression

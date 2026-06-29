@@ -150,14 +150,25 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
   # (10) Adjusted forecasts for WIS (t=-1)
   #wis_results
   
-  # (11) & (12) Ensemble weights and fit statistics
+  # (11) Draws of theta (calculated in log space)
+  # note: exp(theta) = RR
+  theta_draws <- merge(data[time_id==forecast_target,
+                            .SD, .SDcols = c('location_id', 'time_id', 'y')],
+                       final_results[time_id==forecast_target,
+                            .SD, .SDcols = c('location_id', 'time_id', draw_cols)],
+                       by=c('location_id', 'time_id'))
+  
+  theta_draws[, (draw_cols) := lapply(.SD, function(d) y - d), .SDcols = draw_cols]
+  theta_draws$y <- NULL
+  
+  # (12) & (13) Ensemble weights and fit statistics
   # weights_dt
   # fit_stats_dt
   
-  # (13) Sigmas
+  # (14) Sigmas
   # sigmas_dt
   
-  # (14) Time stamps
+  # (15) Time stamps
   time_stamps <- c(data_time = data_time, pred_time = pred_time, ensemble_time = ensemble_time, adjust_time = adjust_time)
   
   return(list(obs_dt = data,
@@ -170,6 +181,7 @@ pipeline <- function(pipeline_inputs, param_set=NULL){
               multiplier2 = multiplier2,
               results_output = results_output,
               wis_results = wis_results,
+              theta_draws = theta_draws,
               weights_dt = weights_dt,
               fit_stats_dt = fit_stats_dt,
               sigmas_dt = sigmas_dt,

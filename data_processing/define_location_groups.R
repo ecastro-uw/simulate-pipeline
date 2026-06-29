@@ -11,22 +11,24 @@
 # by size (big/small) and political affiliation (rep/dem/mod). 
 
 # Investigation 2:
-# Location group definitions TBD
+# For each of the four imposition categories (1st/2nd restaurant/bar), group US counties by
+# state.
 
 # Investigation 3:
 # Location group definitions TBD
 
 library(data.table)
 library(lubridate)
+source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 ### (1) SETUP ###
 
 # --- Args ---
-suffix    <- 'inv1_0601'     # For distinguishing output file names
+inv_num <- 2
+suffix    <- 'inv2_0621'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
-padding   <-  2         # Weeks of data to discard after a mandate lifts
 
 # --- Paths ---
 input_root <- paste0('/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/', country, '_', loc_units, '/')
@@ -44,17 +46,26 @@ min_train_flex   <- 3       # Flexibility window around minimum for second impos
 #mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
 #epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
 
+if (inv_num==1){
+  # Load population data and define bins (big/small)
+  pop_dt <- fread(file.path(input_root, 'population.csv'))
+  pop_dt[, pop_cat := ifelse(pop >= pop_threshold, 'big', 'small')]
+  
+  # Load political affiliation data and define bins (D/M/R)
+  elect_dt   <- fread(file.path(input_root, 'election_results.csv'))
+  elect_dt[, pct := votes / total_votes]
+  elect_wide <- dcast(elect_dt, location_id ~ party, value.var = 'pct')
+  elect_wide[, pol_cat := ifelse(DEMOCRAT > pol_threshold, 'D', ifelse(REPUBLICAN > pol_threshold, 'R', 'M'))]
+}
 
-# Load population data and define bins (big/small)
-pop_dt <- fread(file.path(input_root, 'population.csv'))
-pop_dt[, pop_cat := ifelse(pop >= pop_threshold, 'big', 'small')]
-
-# Load political affiliation data and define bins (D/M/R)
-elect_dt   <- fread(file.path(input_root, 'election_results.csv'))
-elect_dt[, pct := votes / total_votes]
-elect_wide <- dcast(elect_dt, location_id ~ party, value.var = 'pct')
-elect_wide[, pol_cat := ifelse(DEMOCRAT > pol_threshold, 'D', ifelse(REPUBLICAN > pol_threshold, 'R', 'M'))]
-
+if (inv_num==2){
+  # Load state mapping
+  hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
+  states_dt <- merge(hierarchy[level==3, .(parent_id, location_id, location_name)],
+                     hierarchy[level==2, .(location_id, state = location_name, state_abbrev = gsub('US-','',local_id))],
+                    by.x='parent_id', by.y='location_id')
+}
+  
 # Helper: add per-location training window dates to a context subset (modifies in place)
 add_train_window <- function(dt, mandate_num) {
   if (mandate_num == 'first') {
@@ -85,7 +96,7 @@ for (event in event_list) {
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
   
   ### TEMP - ALTER MANDATE IMPOSITION ###
-  #event_dt[, onset_date := onset_date + weeks(2)] ##DELETE AFTER TESTING
+  #event_dt[, onset_date := onset_date - weeks(1)] ##ONLY FOR TESTING
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
   if (mandate_num == 'second') {
@@ -173,28 +184,44 @@ for (event in event_list) {
   event_dt <- event_dt[! location_id %in% missing_mob]
 
   
-  # Add population category; log locations absent from pop_dt
-  missing_pop <- setdiff(event_dt$location_id, pop_dt$location_id)
-  if (length(missing_pop) > 0) {
-    drop_log[[paste0(event, '__missing_pop')]] <- data.table(
-      location_id = missing_pop, event = event, reason = 'missing_population'
-    )
+  
+  if(inv_num==1){
+    # Add population category; log locations absent from pop_dt
+    missing_pop <- setdiff(event_dt$location_id, pop_dt$location_id)
+    if (length(missing_pop) > 0) {
+      drop_log[[paste0(event, '__missing_pop')]] <- data.table(
+        location_id = missing_pop, event = event, reason = 'missing_population'
+      )
+    }
+    event_dt <- merge(event_dt, pop_dt[, .(location_id, pop_cat)], by = 'location_id')
+  
+    # Add political affiliation category; log locations absent from elect_wide
+    missing_pol <- setdiff(event_dt$location_id, elect_wide$location_id)
+    if (length(missing_pol) > 0) {
+      drop_log[[paste0(event, '__missing_pol')]] <- data.table(
+        location_id = missing_pol, event = event, reason = 'missing_election_data'
+      )
+    }
+    event_dt <- merge(event_dt, elect_wide[, .(location_id, pol_cat)], by = 'location_id')
+    # Define column names to keep
+    cols_out <- c('location_id', 'onset_date', 'pop_cat', 'pol_cat')
   }
-  event_dt <- merge(event_dt, pop_dt[, .(location_id, pop_cat)], by = 'location_id')
-
-  # Add political affiliation category; log locations absent from elect_wide
-  missing_pol <- setdiff(event_dt$location_id, elect_wide$location_id)
-  if (length(missing_pol) > 0) {
-    drop_log[[paste0(event, '__missing_pol')]] <- data.table(
-      location_id = missing_pol, event = event, reason = 'missing_election_data'
-    )
+  
+  if(inv_num==2){
+    missing_state <- setdiff(event_dt$location_id, states_dt$location_id)
+    if (length(missing_state) > 0) {
+      drop_log[[paste0(event, '__missing_state')]] <- data.table(
+        location_id = missing_state, event = event, reason = 'missing_state'
+      )
+    }
+    event_dt <- merge(event_dt, states_dt[, .(location_id, state, state_abbrev)], by = 'location_id')
+    # Define column names to keep
+    cols_out <- c('location_id', 'onset_date', 'state', 'state_abbrev')
   }
-  event_dt <- merge(event_dt, elect_wide[, .(location_id, pol_cat)], by = 'location_id')
 
   #TODO - for 2nd mandates, check for onset dates occurring after end of mobility data availability
 
   # Collect relevant columns and append to all_contexts
-  cols_out <- c('location_id', 'onset_date', 'pop_cat', 'pol_cat')
   if (mandate_num == 'second') cols_out <- c(cols_out, 'prev_lift', 'int_wks')
   context_map        <- event_dt[, .SD, .SDcols = cols_out]
   context_map[, event := event]
@@ -246,14 +273,20 @@ for (event_name in event_list) {
 
 
 # Ensure proper sorting before assigning context ids
-all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'second_restaurant', 'first_bar', 'second_bar'))]
-all_contexts <- all_contexts[order(event, pop_cat, pol_cat)]
-
-# Assign context IDs
-all_contexts[, context_id := .GRP, by = c('event', 'pop_cat', 'pol_cat')]
+all_contexts[, event      := factor(event,      levels = c('first_restaurant', 'first_bar', 'second_restaurant', 'second_bar'))]
+if(inv_num==1){
+  all_contexts <- all_contexts[order(event, pop_cat, pol_cat)]
+  all_contexts[, context_id := .GRP, by = c('event', 'pop_cat', 'pol_cat')]
+  context_dims <- c('pop_cat', 'pol_cat')
+}
+if(inv_num==2){
+  all_contexts <- all_contexts[order(event, state)]
+  all_contexts[, context_id := .GRP, by = c('event', 'state_abbrev')]
+  context_dims <- c('state_abbrev')
+}
 
 # Build context definitions (one row per context)
-context_guide <- all_contexts[, .N, by = c('context_id', 'event', 'pop_cat', 'pol_cat')]
+context_guide <- all_contexts[, .N, by = c('context_id', 'event', context_dims)]
 context_guide[, `:=`(
   country      = country,
   ADMN         = ifelse(loc_units == 'states', 1, 2),
@@ -373,8 +406,8 @@ context_lookup[, `:=`(
   model_7  = ifelse(edu == 1, 1, 0),                                                # OLS: lagged y + schools
   model_8  = ifelse(gathering == 1, 1, 0),                                          # OLS: lagged y + gatherings
   model_9  = ifelse(gym == 1, 1, 0),                                                # OLS: lagged y + gym
-  model_10  = ifelse(bar == 1, 1, 0),                                               # OLS: lagged y + bar
-  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0)         # OLS: lagged y + sum of mandates
+  model_10 = ifelse(bar == 1, 1, 0),                                                # OLS: lagged y + bar
+  model_11 = ifelse(gathering == 1 | bar == 1 | edu == 1 | gym == 1, 1, 0)          # OLS: lagged y + sum of mandates
   # Miscellaneous
   #model_30 = 1,                                                                     # exponential smoothing
   #model_31 = 0                                                                      # neural network
@@ -385,7 +418,7 @@ context_lookup[, `:=`(
 
 # (a) context lookup
 cols_to_keep <- c('context_id', 'country', 'ADMN', 'mandate_type', 'mandate_num',
-                  'outcome', 'pop_cat', 'pol_cat', 'N', paste0('model_', 1:11))
+                  'outcome', context_dims, 'N', paste0('model_', 1:11))
 context_lookup <- context_lookup[, .SD, .SDcols = cols_to_keep]
 fwrite(context_lookup, paste0(out_dir, 'context_lookup_', suffix, '.csv'))
 
