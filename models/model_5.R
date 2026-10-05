@@ -9,7 +9,7 @@ model_5 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   setorder(dt, location_id, time_id)
   
   # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
+  dt[, lagged_y := shift(y_covar), by=location_id]
   
   # Calculate sum of deaths over the previous 2 weeks (excluding current week)
   dt[, deaths_lag2_sum := frollsum(shift(deaths_pc, 1), n = 2, align = "right"), by = location_id]

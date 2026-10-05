@@ -8,7 +8,7 @@ model_10 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   dt <- copy(dataset)
   
   # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
+  dt[, lagged_y := shift(y_covar), by=location_id]
   
   # Lag bar closures to use as a predictor
   dt[, lagged_bar := shift(pct_bar), by=location_id]

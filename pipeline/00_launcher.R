@@ -15,7 +15,7 @@ library(yaml)
 
 ## 1. SETUP OUTPUT DIRECTORY ##
 out_dir <- set_up(out_root)
-#out_dir <- file.path(out_root,'20260621.01')
+#out_dir <- file.path(out_root,'20260702.05')
 
 
 ## 2. LOAD CONFIG FILE AND LOOKUP TABLE ##
@@ -57,11 +57,11 @@ sbatch(jobname = 'its_pipeline',
 ## 4. QC Reminder
 # After all jobs finish, verify that expected output files exist:
 
-#   files <- list.files(file.path(out_dir, 'batched_output'), pattern = 'pred_adj_context_')
-#   if (length(files) < n_contexts){
-#     message('Some output files are missing')
-#     found <- as.integer(gsub("pred_adj_context_(\\d+)\\.csv", "\\1", files))
-#     missing <- setdiff(1:n_contexts, found)
-#     missing
-#   }
+   files <- list.files(file.path(out_dir, 'batched_output'), pattern = 'pred_adj_context_')
+   if (length(files) < n_contexts){
+     message('Some output files are missing')
+     found <- as.integer(gsub("pred_adj_context_(\\d+)\\.csv", "\\1", files))
+     missing <- setdiff(1:n_contexts, found)
+     missing
+   }
 

@@ -8,7 +8,7 @@ model_8 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   dt <- copy(dataset)
   
   # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
+  dt[, lagged_y := shift(y_covar), by=location_id]
   
   # Lag gathering restrictions to use as a predictor
   dt[, lagged_gathering := shift(pct_gathering), by=location_id]

@@ -50,12 +50,12 @@ prep_data <- function(pipeline_inputs){
     cat_name <- ifelse(mandate=='restaurant', 'Restaurants', 'Drinking')
     
     # Load the data
-    outcome_dt <- fread(paste0(input_subdir,'/processed_safegraph_data.csv'))[location_id %in%
+    mobility_dt <- fread(paste0(input_subdir,'/processed_safegraph_data.csv'))[location_id %in%
                    location_list & top_category %like% cat_name, .(location_id, date, v = visit_count)]
-    setorder(outcome_dt, location_id, date)
+    setorder(mobility_dt, location_id, date)
     
     # Calculate baseline for normalization (use same period as Google)
-    baseline_dt <- outcome_dt[date >= '2020-01-03' & date <= '2020-02-06'] 
+    baseline_dt <- mobility_dt[date >= '2020-01-03' & date <= '2020-02-06'] 
     # subset to locations with no missing data during the 35-day baseline period
     complete_baseline <- baseline_dt[!is.na(v), .N, by = location_id][N == 35, location_id]
     baseline_dt <- baseline_dt[location_id %in% complete_baseline]
@@ -72,22 +72,22 @@ prep_data <- function(pipeline_inputs){
     # If second mandate, all but 2 (padding) weeks between the mandates and 1 week post (w)
     if (imposition=='first'){
       # Subset to appropriate window
-      outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
-      outcome_dt <- outcome_dt[date >= (onset_date - (configs$default_train_wks*7)) &
+      mobility_dt <- merge(mobility_dt, event_dt, by='location_id')
+      outcome_dt <- mobility_dt[date >= (onset_date - (configs$default_train_wks*7)) &
                                 date < (onset_date + (configs$w*7))]
       
     } else{
       # Subset to appropriate window
-      outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
+      mobility_dt <- merge(mobility_dt, event_dt, by='location_id')
       
-      outcome_dt[, start_date := {
+      mobility_dt[, start_date := {
         base_date <- prev_lift + configs$padding*7
         onset_dow  <- wday(onset_date)   # day of week for onset_date (1=Sun … 7=Sat)
         base_dow   <- wday(base_date)    # day of week for base_date
         days_to_add <- (onset_dow - base_dow) %% 7  # 0–6 additional days needed
         base_date + days_to_add
       }]
-      outcome_dt <- outcome_dt[date >= start_date & date < (onset_date + (configs$w*7))]
+      outcome_dt <- mobility_dt[date >= start_date & date < (onset_date + (configs$w*7))]
       
     }
     
@@ -207,8 +207,9 @@ prep_data <- function(pipeline_inputs){
   }
 
   # Append two lag-padding weeks so that lagged covariate terms are defined
-  # for all actual training observations. Padding rows have y = NA and are
-  # excluded from model fits by each model's NA-dropping logic.
+  # for the full training set. Padding rows have y = NA and so are
+  # excluded from model fits by each model's NA-dropping logic. Instead, a
+  # separate variable containing lagged y data is defined.
   # Two weeks are needed to cover the 2-week lagged sum for cases/deaths;
   # the nearer padding week also supplies the 1-week lagged mandate values.
   if(any(model_nums > 3)){
@@ -224,8 +225,10 @@ prep_data <- function(pipeline_inputs){
       train_start_per_loc, by = 'location_id'
     )
     
+    # grab 2 (lag_pad_wks) extra weeks of case and death data
     pad_daily <- pad_daily[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
-      
+    
+    # grap 2 (lag_pad_wks) extra weeks of mandate data  
     pad_daily <- merge(
       pad_daily,
       mandate_dt[, .(location_id, date, primary_edu, gatherings50i100o,
@@ -234,10 +237,18 @@ prep_data <- function(pipeline_inputs){
       by = c('location_id', 'date'), all.x = TRUE
     )
     
+    # grab 2 (lag_pad_wks) extra weeks of outcome data (visit volume)
+    pad_daily <- merge(
+      pad_daily,
+      mobility_dt[, .(location_id, date, v)],
+      by = c('location_id', 'date'), all.x = TRUE
+    )
+    
     pad_daily[, time_id := as.numeric(floor((date - onset_date) / 7))]
     
     pad_weekly <- pad_daily[, .(
       y             = NA_real_,
+      v_wkly        = sum(v),
       cases_pc      = sum(daily_cases)/unique(pop)*10000,
       deaths_pc     = sum(daily_deaths)/unique(pop)*10000,
       pct_edu       = sum(primary_edu)/7,
@@ -249,12 +260,55 @@ prep_data <- function(pipeline_inputs){
       pct_bar       = sum(bar_close)/7
     ), by = c('location_id', 'time_id')]
     
-    dt <- rbind(dt, pad_weekly)
+    # define covariate y to match outcome y
+    pad_weekly <- merge(pad_weekly, baseline, by = 'location_id', all.x=T)
+    pad_weekly[, y_covar := log((v_wkly + 0.5) / mean_base)]
+    pad_weekly$v_wkly <- NULL
+    pad_weekly$mean_base <- NULL
+    
+    # add the extra weeks of covariate data to the data build
+    dt <- rbind(dt, pad_weekly, fill=T)
+    dt[is.na(y_covar), y_covar := y]
+  } else {
+    lag_pad_wks <- 2L
+    
+    train_start_per_loc <- outcome_dt[
+      , .(train_start = min(date), onset_date = unique(onset_date)),
+      by = location_id
+    ][location_id %in% dt$location_id]
+    
+    pad_daily <- merge(
+      mobility_dt[, .(location_id, date, v)],
+      train_start_per_loc, by = 'location_id'
+    )
+    
+    # grab 2 (lag_pad_wks) extra weeks of mobility data
+    pad_daily <- pad_daily[date >= (train_start - lag_pad_wks * 7L) & date < train_start]
+    
+    # summarize to week level
+    pad_daily[, time_id := as.numeric(floor((date - onset_date) / 7))]
+    
+    pad_weekly <- pad_daily[, .(
+      y             = NA_real_,
+      v_wkly        = sum(v)
+    ), by = c('location_id', 'time_id')]
+    
+    # define covariate y to match outcome y
+    pad_weekly <- merge(pad_weekly, baseline, by = 'location_id', all.x=T)
+    pad_weekly[, y_covar := log((v_wkly + 0.5) / mean_base)]
+    pad_weekly$v_wkly <- NULL
+    pad_weekly$mean_base <- NULL
+    
+    # add the extra weeks of covariate data to the data build
+    dt <- rbind(dt, pad_weekly, fill=T)
+    dt[is.na(y_covar), y_covar := y]
   }
   
   # Save out the problem log
   if(nrow(problem_log)>0){
     fwrite(problem_log, paste0(out_dir,'/logs/dropped_locs_context_', pipeline_inputs$context_id,'.csv'))
+  } else {
+    print(paste('Context', pipeline_inputs$context_id, 'has no dropped locations.'))
   }
   
   # Ensure dt is properly sorted

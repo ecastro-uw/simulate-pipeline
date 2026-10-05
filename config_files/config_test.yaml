@@ -1,9 +1,9 @@
 ---
-lookup_suffix: inv2_0621
+lookup_suffix: inv2_TWO_WEEKS_POST_v2
 perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
-padding: 2 #number of weeks after prior mandate lift to disregard
+padding: 1 #number of weeks after prior mandate lift to disregard
 default_train_wks: 8
 seed: 1030
 save_draws?: no

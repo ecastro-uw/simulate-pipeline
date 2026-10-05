@@ -25,7 +25,7 @@ source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # --- Args ---
 inv_num <- 2
-suffix    <- 'inv2_0621'     # For distinguishing output file names
+suffix    <- 'inv2_TWO_WEEKS_POST_v2'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -37,8 +37,8 @@ out_dir    <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
 # --- Thresholds ---
 pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
-min_interval_wks <- 10      # Second imposition must be >= this many weeks after first lift
-padding          <- 2       # Waiting period after first lift
+min_interval_wks <- 8       # Second imposition must be >= this many weeks after first lift
+padding          <- 1       # Waiting period after first lift
 max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
 min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
 min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
@@ -96,7 +96,7 @@ for (event in event_list) {
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
   
   ### TEMP - ALTER MANDATE IMPOSITION ###
-  #event_dt[, onset_date := onset_date - weeks(1)] ##ONLY FOR TESTING
+  event_dt[, onset_date := onset_date + weeks(2)] ##ONLY FOR TESTING
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
   if (mandate_num == 'second') {

@@ -8,7 +8,7 @@ model_11 <- function(dataset, w, d, use_param_uncertainty = TRUE){
   dt <- copy(dataset)
   
   # Lag the dependent variable to use as a predictor
-  dt[, lagged_y := shift(y), by=location_id]
+  dt[, lagged_y := shift(y_covar), by=location_id]
   
   # Calculate lagged composite mandate score
   dt[, mandate_tot := pct_edu + pct_gathering + pct_gym + pct_bar]

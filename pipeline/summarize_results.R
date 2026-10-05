@@ -1,5 +1,5 @@
 # Summarize results by context
-# After all jobs have finished running, this script should be run to create summary tables and figures
+# After all jobs have finished running, this script should be run to create context-level summary tables and figures
 # designed to compare results across contexts. Results fall into one of two categories:
 # (1) Model performance measures - these include pre-adjusted empirical coverage, multiplier, mean PI width,
 #     weighted interval score, and forecast skill. They are summarized in a table.
@@ -20,8 +20,8 @@ library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20260621.01'
-missing_contexts <- c(113)
+version_id <- '20260702.08'
+#missing_contexts <- ''
 inv_num <- 2
 
 # dirs
@@ -30,7 +30,8 @@ root_dir <- file.path('/ihme/scratch/users/ems2285/thesis/outputs/outputs',versi
 # load context lookup file
 context_lookup <- fread(file.path(root_dir,'inputs/context_lookup_table.csv'))
 # allow for known missing contexts
-context_list <- context_lookup$context_id[-missing_contexts]
+#context_list <- context_lookup$context_id[-missing_contexts]
+context_list <- context_lookup$context_id
 
 # define context dimensions
 if (inv_num==1){
@@ -187,17 +188,18 @@ calc_eff_size_meta <- function(context){
   # load thetas
   thetas <- fread(paste0(root_dir,'/batched_output/thetas_context_',context,'.csv'))
   draw_cols <- grep("^draw_", names(thetas), value = TRUE)
-  all_draws <- unlist(thetas[, ..draw_cols]) #vector of N locs x 1000 draws per loc
+  # exponentiate to yield Relative Risks and combine into one long vector
+  all_draws <- exp(unlist(thetas[, ..draw_cols])) #vector of RRs: N locs x 1000 draws per loc
   
   point_est <- median(all_draws)
   ci_95 <- quantile(all_draws, c(0.025, 0.975))
   
   temp_dt <- data.table(context_id = context,
-                        theta_median = round(point_est,2),
-                        theta_lower = ci_95[1],
-                        theta_upper = ci_95[2],
-                        CI_theta = paste0('(',round(ci_95[1],2),', ', round(ci_95[2],2),')'),
-                        direction = ifelse(ci_95[2] < 0, 'decrease', ifelse(ci_95[1] > 0, 'increase', 'indeterminate'))
+                        RR_median = round(point_est,2),
+                        RR_lower = ci_95[1],
+                        RR_upper = ci_95[2],
+                        CI_RR = paste0('(',round(ci_95[1],2),', ', round(ci_95[2],2),')'),
+                        direction = ifelse(ci_95[2] < 1, 'decrease', ifelse(ci_95[1] > 1, 'increase', 'indeterminate'))
                         )
   return(temp_dt)
 }
@@ -431,12 +433,16 @@ plot_timeseries <- function(context, model_name='ensemble', save_pdf = FALSE){
 
 # Could try stratifying counties based upon case load/onset of outbreak?
 
-# big dem
-plot_timeseries(context = 1,
+# IA first bar
+plot_timeseries(context = 64,
                 model_name = "ensemble",
                 save_pdf = F)
-# big mod
-plot_timeseries(context = 4,
+# ND first bar
+plot_timeseries(context = 83,
+                model_name = "ensemble",
+                save_pdf = F)
+# VT first bar
+plot_timeseries(context = 93,
                 model_name = "ensemble",
                 save_pdf = F)
 
