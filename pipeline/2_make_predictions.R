@@ -9,7 +9,7 @@ make_predictions <- function(data, pipeline_inputs){
   w <- configs$w
   d <- configs$d
   use_param_uncertainty <- isTRUE(configs[["use_param_uncertainty"]])
-  spread <- 4 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
+  spread <- 3 # total number of weeks to be forecast (3 weeks pre + 1 week post event)
   
   # Use each model to forecast the desired number of time steps
   pred_all <- function(mod, dt, spread, w, d){

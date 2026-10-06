@@ -1,5 +1,5 @@
 ---
-lookup_suffix: inv2_TWO_WEEKS_POST_v2
+lookup_suffix: inv2_intersect
 perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
