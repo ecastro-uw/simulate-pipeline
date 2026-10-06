@@ -12,7 +12,14 @@ source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 Scenario <- 'D'
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
-list_of_versions <- versions_dt$version
+
+# Convert a week value from versions_dt (e.g. "-2", "0", "1", "+1") to the
+# column label used in the vetting tables ("-2", "-1", "0", "+1", "+2")
+format_wk_shift <- function(week){
+  wk <- as.integer(week)
+  if(is.na(wk)) stop(paste0("Invalid week value in versions_dt: '", week, "'"))
+  ifelse(wk > 0, paste0('+', wk), as.character(wk))
+}
 
 
 ### Prep location hierarchy -------
@@ -20,7 +27,7 @@ hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
 st_abbrev_map <- hierarchy[level==2, .(location_name, state_abbrev = gsub('US-','',local_id))]
 
 ### (A) Measure 1 -----------------
-load_pvals <- function(version_id){
+load_pvals <- function(version_id, week){
   
   # root_dir
   root_dir <- paste0('/ihme/scratch/users/ems2285/thesis/outputs/outputs/',version_id)
@@ -28,17 +35,8 @@ load_pvals <- function(version_id){
   # load the data
   dt <- fread(paste0(root_dir,'/effect_size_summary.csv'))[, .(mandate_num, mandate_type, state_abbrev, binom_p)]
   
-  # resolve the week shift
-  suffix <- read_yaml(paste0(root_dir,'/inputs/config.yaml'))$lookup_suffix
-  if(suffix=='inv2_intersect'){
-    vv <- substr(version_id, 10, 11)
-    wk_shift <- ifelse(vv=="06", '-2', ifelse(vv=="07", '-1',
-                ifelse(vv=="08",'0', ifelse(vv=="01", '+1', '+2'))))
-  } else {
-    wk_shift <- ifelse(suffix=="inv2_ONE_WEEK_PRE_v2", '-1', ifelse(suffix=="inv2_TWO_WEEKS_PRE_v2", '-2',
-                  ifelse(suffix=="inv2_ONE_WEEK_POST_v2", '+1',
-                         ifelse(suffix=="inv2_TWO_WEEKS_POST_v2", '+2', '0'))))
-  }
+  # resolve the week shift from versions_dt
+  wk_shift <- format_wk_shift(week)
   
   # rename the p-val column to reflect week shift
   setnames(dt, 'binom_p', wk_shift)
@@ -46,7 +44,7 @@ load_pvals <- function(version_id){
 }
 
 # Extract and combine Measure 1 for all contexts and cutpoints
-dt_list <- lapply(list_of_versions, load_pvals)
+dt_list <- Map(load_pvals, versions_dt$version, versions_dt$week)
 merged_dt <- Reduce(function(x, y) merge(x, y, by = c("mandate_num", "mandate_type", "state_abbrev"), all = TRUE), dt_list)
 
 # Sort as desired
@@ -60,7 +58,7 @@ fwrite(merged_dt, '/ihme/scratch/users/ems2285/thesis/outputs/shift_ITS_experime
 
 
 ### (B) Measure 2 -----------------
-load_thetas <- function(version_id){
+load_thetas <- function(version_id, week){
   
   # root_dir
   root_dir <- paste0('/ihme/scratch/users/ems2285/thesis/outputs/outputs/',version_id)
@@ -69,17 +67,8 @@ load_thetas <- function(version_id){
   dt <- fread(paste0(root_dir,'/effect_size_meta.csv'))[, .(mandate_num, mandate_type, state_abbrev, direction)]
   dt[, direction := ifelse(direction=="decrease", "-1", ifelse(direction=="indeterminate", "0", "1"))]
   
-  # resolve the week shift
-  suffix <- read_yaml(paste0(root_dir,'/inputs/config.yaml'))$lookup_suffix
-  if(suffix=='inv2_intersect'){
-    vv <- substr(version_id, 10, 11)
-    wk_shift <- ifelse(vv=="06", '-2', ifelse(vv=="07", '-1',
-                                              ifelse(vv=="08",'0', ifelse(vv=="01", '+1', '+2'))))
-  } else {
-    wk_shift <- ifelse(suffix=="inv2_ONE_WEEK_PRE_v2", '-1', ifelse(suffix=="inv2_TWO_WEEKS_PRE_v2", '-2',
-                                                                    ifelse(suffix=="inv2_ONE_WEEK_POST_v2", '+1',
-                                                                           ifelse(suffix=="inv2_TWO_WEEKS_POST_v2", '+2', '0'))))
-  }
+  # resolve the week shift from versions_dt
+  wk_shift <- format_wk_shift(week)
   
   # rename the p-val column to reflect week shift
   setnames(dt, 'direction', wk_shift)
@@ -87,7 +76,7 @@ load_thetas <- function(version_id){
 }
 
 # Extract and combine Measure 2 for all contexts and cutpoints
-theta_list <- lapply(list_of_versions, load_thetas)
+theta_list <- Map(load_thetas, versions_dt$version, versions_dt$week)
 merged_thetas <- Reduce(function(x, y) merge(x, y, by = c("mandate_num", "mandate_type", "state_abbrev"), all = TRUE), theta_list)
 
 # Sort as desired
