@@ -13,6 +13,14 @@ Scenario <- 'D'
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
 
+# Convert a week value from versions_dt to the column label used in the
+# vetting tables ("-2", "-1", "0", "+1", "+2")
+format_wk_shift <- function(week){
+  wk <- as.integer(week)
+  if(is.na(wk)) stop(paste0("Invalid week value in versions_dt: '", week, "'"))
+  ifelse(wk > 0, paste0('+', wk), as.character(wk))
+}
+
 ### Prep location hierarchy -------
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
 st_abbrev_map <- hierarchy[level==2, .(location_name, state_abbrev = gsub('US-','',local_id))]
@@ -26,8 +34,11 @@ load_pvals <- function(version_id, week){
   # load the data
   dt <- fread(paste0(root_dir,'/effect_size_summary.csv'))[, .(mandate_num, mandate_type, state_abbrev, binom_p)]
   
+  # resolve the week shift from versions_dt
+  wk_shift <- format_wk_shift(week)
+  
   # rename the p-val column to reflect week shift
-  setnames(dt, 'binom_p', week)
+  setnames(dt, 'binom_p', wk_shift)
   return(dt)
 }
 
@@ -55,6 +66,9 @@ load_thetas <- function(version_id, week){
   # load the data
   dt <- fread(paste0(root_dir,'/effect_size_meta.csv'))[, .(mandate_num, mandate_type, state_abbrev, direction)]
   dt[, direction := ifelse(direction=="decrease", "-1", ifelse(direction=="indeterminate", "0", "1"))]
+  
+  # resolve the week shift from versions_dt
+  wk_shift <- format_wk_shift(week)
   
   # rename the p-val column to reflect week shift
   setnames(dt, 'direction', wk_shift)
