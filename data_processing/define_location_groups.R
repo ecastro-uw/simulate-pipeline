@@ -96,7 +96,7 @@ for (event in event_list) {
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
   
   ### TEMP - ALTER MANDATE IMPOSITION ###
-  event_dt[, onset_date := onset_date + weeks(2)] ##ONLY FOR TESTING
+  #event_dt[, onset_date := onset_date + weeks(2)] ##ONLY FOR TESTING
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
   if (mandate_num == 'second') {

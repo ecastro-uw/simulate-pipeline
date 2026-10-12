@@ -1,5 +1,5 @@
 
-# Load location hierarcy
+# Load location hierarchy
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
 state_map <- hierarchy[level==2, .(location_id, state_abbrev = gsub('US-','',local_id))]
@@ -9,6 +9,16 @@ states_dt <- merge(hierarchy[level==3, .(location_id, location_name, parent_id)]
 
 # Load dropped location log
 dropped_dt <- fread('/ihme/homes/ems2285/repos/simulate-pipeline/config_files/dropped_locations_inv2_0628.csv')
+locs_dt <- fread('/ihme/homes/ems2285/repos/simulate-pipeline/config_files/locs_by_context_inv2_0628.csv')
+contexts_dt <- fread('/ihme/homes/ems2285/repos/simulate-pipeline/config_files/context_lookup_inv2_0628.csv')
+
+# california second restaurants
+co_context_id <- contexts_dt[mandate_type=='restaurant' & mandate_num=='second' & state_abbrev=='CO']$context_id
+locs_dt[context_id==co_context_id]
+
+# Format event variable
+dropped_dt[, event := factor(event, levels = c('first_restaurant', 'second_restaurant',
+                                               'first_bar', 'second_bar'))]
 
 # Plot reason for exclusion, by mandate type
 ggplot(dropped_dt, aes(x=event, fill=reason)) +
@@ -24,6 +34,7 @@ ggplot(dropped_dt[event=='second_restaurant'], aes(x=state_abbrev, fill=reason))
   geom_bar(position="stack") +
   scale_x_discrete("State") +
   scale_y_continuous("Number of counties dropped") +
+  ggtitle('Second Restaurant Mandates') +
   theme_classic()
 
 
