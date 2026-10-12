@@ -130,8 +130,10 @@ calc_eff_size <- function(context){
   dt[, eff_size := y - q50]
   
   # calculate p-value across all locations
+  # p = Pr(X>=k)
+  # lower.tail=F tests Pr(X>k) so first arg of pbinom must be k-1
   k <- nrow(dt[p_val < 0.05]) #number of sig locs
-  binom_p <- round(pbinom(k,nrow(dt),0.05,lower.tail=F),2)
+  binom_p <- round(pbinom(k-1,nrow(dt),0.05,lower.tail=F),2)
   
   # calculate median and IQR of effect size across locations
   temp_dt <- data.table(context_id = context,
