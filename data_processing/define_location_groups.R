@@ -39,7 +39,7 @@ pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
 padding          <- 1       # Washout period after first lift (weeks); should match 'padding' in config.yaml
 max_train_wks    <- 8       # Training window length for all contexts (weeks); should match 'default_train_wks' in config.yaml
-min_train_wks    <- 5       # Shortest training window used in the pipeline (8 weeks minus 3 hold-out weeks)
+min_train_wks    <- 5       # Shortest training window used in the pipeline (weeks -8 to -4, for the earliest hold-out forecast)
 min_interval_wks <- max_train_wks + padding # Second imposition must be >= this many weeks after first lift
 #mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
 #mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
