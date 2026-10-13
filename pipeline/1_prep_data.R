@@ -43,6 +43,20 @@ prep_data <- function(pipeline_inputs){
   }
   missing_event_data <- setdiff(location_list, event_dt$location_id)
   
+  # For second impositions, the full training window must fall after the washout period
+  # (padding weeks) following the prior mandate lift, i.e., the second mandate must begin
+  # at least (default_train_wks + padding) weeks after the first mandate lifts.
+  short_interval <- integer()
+  if (imposition=='second'){
+    min_interval_days <- (configs$default_train_wks + configs$padding)*7
+    short_interval <- event_dt[as.numeric(onset_date - prev_lift) < min_interval_days, location_id]
+    event_dt <- event_dt[! location_id %in% short_interval]
+    if(nrow(event_dt)==0){
+      stop(paste("No locations have a second", mandate, "mandate imposed at least",
+                 configs$default_train_wks + configs$padding, "weeks after the first mandate lifted."))
+    }
+  }
+  
   ### (2) Second, load and process the outcome data
   if (data_source=='safegraph'){
     
@@ -67,49 +81,24 @@ prep_data <- function(pipeline_inputs){
     incomplete_baseline <- setdiff(location_list, complete_baseline)
 
     
-    # Get data for the desired study window
-    # If first mandate, 8 weeks prior (default train weeks) and 1 week post (w)
-    # If second mandate, all but 2 (padding) weeks between the mandates and 1 week post (w)
-    if (imposition=='first'){
-      # Subset to appropriate window
-      mobility_dt <- merge(mobility_dt, event_dt, by='location_id')
-      outcome_dt <- mobility_dt[date >= (onset_date - (configs$default_train_wks*7)) &
-                                date < (onset_date + (configs$w*7))]
-      
-    } else{
-      # Subset to appropriate window
-      mobility_dt <- merge(mobility_dt, event_dt, by='location_id')
-      
-      mobility_dt[, start_date := {
-        base_date <- prev_lift + configs$padding*7
-        onset_dow  <- wday(onset_date)   # day of week for onset_date (1=Sun … 7=Sat)
-        base_dow   <- wday(base_date)    # day of week for base_date
-        days_to_add <- (onset_dow - base_dow) %% 7  # 0–6 additional days needed
-        base_date + days_to_add
-      }]
-      outcome_dt <- mobility_dt[date >= start_date & date < (onset_date + (configs$w*7))]
-      
-    }
+    # Get data for the desired study window: 8 weeks prior (default train weeks) and 1 week post (w).
+    # The same window is used for first and second impositions.
+    mobility_dt <- merge(mobility_dt, event_dt, by='location_id')
+    outcome_dt <- mobility_dt[date >= (onset_date - (configs$default_train_wks*7)) &
+                              date < (onset_date + (configs$w*7))]
     
     # Add week id
     outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
     
     # Check for missingness
-    if (imposition=='first'){
-      # Check if any locations having missing weeks (we expect exactly 9 weeks for first imposition)
-      missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
-      # Check if any locations have missing days (each time_id should have 7 rows associated with it)
-      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-      # Combine
-      missing_outcome_data <- unique(c(missing_weeks$location_id, missing_days$location_id))
-    } else {
-      # Check if the onset date extends beyond the available data
-      onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]
-      # Check if any locations have missing days (each time_id should have 7 rows associated with it)
-      missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-      # Combine
-      missing_outcome_data <- unique(c(onset_after_data_ends$location_id, missing_days$location_id))
-    }
+    # Check if any locations having missing weeks (we expect exactly default_train_wks + w weeks)
+    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (configs$default_train_wks + configs$w)]
+    # Locations with no rows at all in the study window
+    no_window_data <- setdiff(event_dt$location_id, outcome_dt$location_id)
+    # Check if any locations have missing days (each time_id should have 7 rows associated with it)
+    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+    # Combine
+    missing_outcome_data <- unique(c(missing_weeks$location_id, no_window_data, missing_days$location_id))
     
     # Drop any locations with missing data during the study period
     outcome_dt <- outcome_dt[! location_id %in% missing_outcome_data]
@@ -125,6 +114,9 @@ prep_data <- function(pipeline_inputs){
                             )
   rows <- data.table(location_id = missing_outcome_data,
                      reason = rep("Missing mobility data", length(missing_outcome_data)))
+  problem_log <- rbind(problem_log, rows)
+  rows <- data.table(location_id = short_interval,
+                     reason = rep("Insufficient interval between mandates", length(short_interval)))
   problem_log <- rbind(problem_log, rows)
   
   if(data_source=='safegraph'){

@@ -37,11 +37,10 @@ out_dir    <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
 # --- Thresholds ---
 pop_threshold    <- 100000  # Counties >= this are classified "big"
 pol_threshold    <- 0.55    # Party vote share above this → D or R; otherwise M
-min_interval_wks <- 8       # Second imposition must be >= this many weeks after first lift
-padding          <- 1       # Waiting period after first lift
-max_train_wks    <- 8       # Maximum training window length for first impositions (weeks)
-min_train_wks    <- 5       # Minimum training window length for first impositions (weeks)
-min_train_flex   <- 3       # Flexibility window around minimum for second impositions (weeks)
+padding          <- 1       # Washout period after first lift (weeks); should match 'padding' in config.yaml
+max_train_wks    <- 8       # Training window length for all contexts (weeks); should match 'default_train_wks' in config.yaml
+min_train_wks    <- 5       # Shortest training window used in the pipeline (8 weeks minus 3 hold-out weeks)
+min_interval_wks <- max_train_wks + padding # Second imposition must be >= this many weeks after first lift
 #mandate_lo       <- 0.1     # Mandate must be active in > this fraction of location-weeks to be eligible
 #mandate_hi       <- 0.9     # Mandate must be active in < this fraction of location-weeks to be eligible
 #epi_threshold    <- 0.05    # Cases/deaths must be non-zero in > this fraction of location-weeks to be eligible
@@ -66,17 +65,13 @@ if (inv_num==2){
                     by.x='parent_id', by.y='location_id')
 }
   
-# Helper: add per-location training window dates to a context subset (modifies in place)
-add_train_window <- function(dt, mandate_num) {
-  if (mandate_num == 'first') {
-    dt[, start_date := onset_date - max_train_wks * 7L]
-    dt[, end_date   := start_date + min_train_wks * 7L - 1L]
-  } else {
-    dt[, max_train_length := int_wks - padding]
-    dt[, min_train_length := max_train_length - min_train_flex]
-    dt[, start_date       := onset_date - max_train_length * 7L]
-    dt[, end_date         := start_date + min_train_length * 7L - 1L]
-  }
+# Helper: add per-location training window dates to a context subset (modifies in place).
+# All contexts (first and second impositions) use exactly max_train_wks of training data.
+# The window checked for covariate inclusion is the shortest training set used in the
+# pipeline (the first min_train_wks weeks).
+add_train_window <- function(dt) {
+  dt[, start_date := onset_date - max_train_wks * 7L]
+  dt[, end_date   := start_date + min_train_wks * 7L - 1L]
   dt
 }
 
@@ -98,7 +93,8 @@ for (event in event_list) {
   ### TEMP - ALTER MANDATE IMPOSITION ###
   event_dt[, onset_date := onset_date + weeks(2)] ##ONLY FOR TESTING
 
-  # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate
+  # Second impositions must occur at least min_interval_wks (max_train_wks + padding) weeks after
+  # lifting of the previous mandate, so that the full training window falls after the washout period
   if (mandate_num == 'second') {
     event_dt[, int_wks := as.numeric(floor((onset_date - prev_lift) / 7))]
     dropped <- event_dt[int_wks < min_interval_wks, location_id]
@@ -145,37 +141,20 @@ for (event in event_list) {
     outcome_dt <- outcome_dt[location_id %in% event_dt$location_id]
   }
   
-  # Check for missing data in the analysis period
+  # Check for missing data in the analysis period (max_train_wks prior to onset and 1 week post)
   outcome_dt <- merge(outcome_dt, event_dt, by='location_id')
-  if (mandate_num=='first'){
-    outcome_dt <- outcome_dt[date >= (onset_date - (max_train_wks * 7L)) &
-                               date < (onset_date + 7L)]
-    outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
-    
-    # Check if any locations having missing weeks
-    missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (max_train_wks+1)]
-    # Check if any locations have missing days (each time_id should have 7 rows associated with it)
-    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-    # Combine
-    missing_mob <- unique(c(missing_weeks$location_id, missing_days$location_id))
-  } else{
-    outcome_dt[, start_date := {
-      base_date <- prev_lift + padding * 7L
-      onset_dow  <- wday(onset_date)
-      base_dow   <- wday(base_date)
-      days_to_add <- (onset_dow - base_dow) %% 7
-      base_date + days_to_add
-    }]
-    outcome_dt <- outcome_dt[date >= start_date & date < (onset_date + 7L)]
-    outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
-    
-    # Check if the onset date extends beyond the available data
-    onset_after_data_ends <- outcome_dt[, max(time_id), by=location_id][V1<0]
-    # Check if any locations have missing days (each time_id should have 7 rows associated with it)
-    missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
-    # Combine
-    missing_mob <- unique(c(onset_after_data_ends$location_id, missing_days$location_id))
-  }
+  outcome_dt <- outcome_dt[date >= (onset_date - (max_train_wks * 7L)) &
+                             date < (onset_date + 7L)]
+  outcome_dt[, time_id := as.numeric(floor((date - onset_date) / 7)), by = location_id]
+  
+  # Check if any locations having missing weeks (this also catches onset dates beyond the end of the data)
+  missing_weeks <- outcome_dt[, length(unique(time_id)), by=location_id][V1 < (max_train_wks+1)]
+  # Locations with no rows at all in the window
+  no_window_data <- setdiff(event_dt$location_id, outcome_dt$location_id)
+  # Check if any locations have missing days (each time_id should have 7 rows associated with it)
+  missing_days <- outcome_dt[, .N, by=c('location_id', 'time_id')][N!=7]
+  # Combine
+  missing_mob <- unique(c(missing_weeks$location_id, no_window_data, missing_days$location_id))
   if (length(missing_mob) > 0) {
     drop_log[[paste0(event, '__missing_mob')]] <- data.table(
       location_id = missing_mob, event = event, reason = 'missing_mobility'
@@ -219,8 +198,6 @@ for (event in event_list) {
     cols_out <- c('location_id', 'onset_date', 'state', 'state_abbrev')
   }
 
-  #TODO - for 2nd mandates, check for onset dates occurring after end of mobility data availability
-
   # Collect relevant columns and append to all_contexts
   if (mandate_num == 'second') cols_out <- c(cols_out, 'prev_lift', 'int_wks')
   context_map        <- event_dt[, .SD, .SDcols = cols_out]
@@ -233,8 +210,7 @@ cases_dt <- fread(paste0(input_root, 'covid_cases_deaths.csv'))
 
 for (event_name in event_list) {
   one_event   <- all_contexts[event == event_name]
-  mandate_num <- ifelse(substr(event_name, 1, 5) == 'first', 'first', 'second')
-  one_event_w <- add_train_window(copy(one_event), mandate_num)
+  one_event_w <- add_train_window(copy(one_event))
 
   # Locations absent from cases_dt entirely
   absent <- setdiff(one_event_w$location_id, cases_dt$location_id)
@@ -303,8 +279,7 @@ mandates <- fread(paste0(input_root, 'other_mandate_time_series.csv'))
 
 check_mandates <- function(context) {
   one_context <- all_contexts[context_id == context]
-  mandate_num <- ifelse(substr(unique(one_context$event), 1, 5) == 'first', 'first', 'second')
-  one_context <- add_train_window(one_context, mandate_num)
+  one_context <- add_train_window(one_context)
 
   min_train_dt <- merge(mandates, one_context[, .(location_id, start_date, end_date, onset_date)],
                         by = 'location_id')
@@ -354,8 +329,7 @@ mandate_covars[grepl("bar",        event), bar    := 0]
 # 3(B) Check if case and death data meet the covariate inclusion criteria for each context
 check_cases_deaths <- function(context) {
   one_context <- all_contexts[context_id == context]
-  mandate_num <- ifelse(substr(unique(one_context$event), 1, 5) == 'first', 'first', 'second')
-  one_context <- add_train_window(one_context, mandate_num)
+  one_context <- add_train_window(one_context)
 
   min_train_dt <- merge(cases_dt, one_context[, .(location_id, start_date, end_date, onset_date)],
                         by = 'location_id')

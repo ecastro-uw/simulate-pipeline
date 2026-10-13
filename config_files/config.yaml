@@ -10,7 +10,7 @@ models: #candidate models to be included in the ensemble
 perform_meas: MSE
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
-padding: 2 #number of weeks after prior mandate lift to disregard
+padding: 1 #number of weeks after prior mandate lift to disregard (washout)
 default_train_wks: 8
 seed: 1030
 dep_var: per capita #count or per capita
