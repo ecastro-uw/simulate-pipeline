@@ -12,6 +12,7 @@ w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
 padding: 1 #number of weeks after prior mandate lift to disregard (washout)
 default_train_wks: 8
+fixed_train_wks: yes #yes: all contexts use exactly default_train_wks; no: second impositions use all weeks after padding
 seed: 1030
 dep_var: per capita #count or per capita
 save_draws?: no
