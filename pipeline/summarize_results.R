@@ -156,7 +156,7 @@ calc_eff_size <- function(context){
   
   # calculate p-value across all locations
   k <- nrow(dt[p_val < 0.05]) #number of sig locs
-  binom_p <- round(pbinom(k,nrow(dt),0.05,lower.tail=F),2)
+  binom_p <- round(pbinom(k-1,nrow(dt),0.05,lower.tail=F),2)
 
   # calculate median and IQR of effect size across locations
   temp_dt <- data.table(context_id = context,
