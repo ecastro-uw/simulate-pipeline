@@ -9,7 +9,7 @@
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # Versions
-Scenario <- 'D'
+Scenario <- 'C_new'
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
 
@@ -51,6 +51,7 @@ merged_dt <- merge(merged_dt, st_abbrev_map, by='state_abbrev', all.x=T)
 merged_dt[, mandate_type := factor(mandate_type, levels = c('restaurant', 'bar'))]
 merged_dt <- merged_dt[order(mandate_num, mandate_type, location_name)]
 merged_dt <- merged_dt[, .(mandate_num, mandate_type, state_abbrev, `-2`, `-1`, `0`, `+1`, `+2`)]
+
 
 # Save
 fwrite(merged_dt,

@@ -38,7 +38,7 @@ prep_data <- function(pipeline_inputs){
   ### (1) First, pull in timing data for event of interest
   event_dt <- fread(paste0(input_subdir, imposition,'_',mandate,'_close.csv'))[location_id %in% location_list]
   
-  # Optionally shift mandate onset dates (testing only; set onset_shift_wks in the config file)
+  # Optionally shift mandate onset dates (for sensitivity analysis)
   onset_shift_wks <- configs$onset_shift_wks
   if (!is.null(onset_shift_wks) && onset_shift_wks != 0){
     event_dt[, onset_date := onset_date + onset_shift_wks*7]

@@ -1,11 +1,11 @@
 ---
-lookup_suffix: inv2_intersect
+lookup_suffix: inv2_intersect_v3
 perform_meas: WIS
 w: 1  #number of weeks ahead to forecast
 d: 1000 #number of draws
 padding: 1 #number of weeks after prior mandate lift to disregard
 default_train_wks: 8
-onset_shift_wks: 0 #shift mandate onset dates by this many weeks (testing only; 0 = no shift)
+onset_shift_wks: 2 #shift mandate onset dates by this many weeks (for sensitivity analysis)
 fixed_train_wks: yes #yes: all contexts use exactly default_train_wks; no: second impositions use all weeks after padding
 seed: 1030
 save_draws?: no

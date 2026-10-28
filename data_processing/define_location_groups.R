@@ -25,7 +25,8 @@ source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # --- Args ---
 inv_num <- 2
-suffix    <- 'inv2_TWO_WEEKS_POST_v2'     # For distinguishing output file names
+mandate_shift_wks <- 0
+suffix    <- 'inv2_v3'     # For distinguishing output file names
 country   <- 'USA'      # USA or Brazil
 loc_units <- 'counties' # states or counties
 data_source <- 'safegraph'
@@ -103,8 +104,10 @@ for (event in event_list) {
   if (mandate_num == 'second') cols_to_keep <- c(cols_to_keep, 'prev_lift')
   event_dt <- fread(paste0(input_root, event, '_close.csv'))[, .SD, .SDcols = cols_to_keep]
   
-  ### TEMP - ALTER MANDATE IMPOSITION ###
-  #event_dt[, onset_date := onset_date + weeks(2)] ##ONLY FOR TESTING
+  ### ALTER MANDATE IMPOSITION ###
+  if (mandate_shift_wks != 0){
+    event_dt[, onset_date := onset_date + mandate_shift_wks*7]
+  }
 
   # Second impositions must occur at least min_interval_wks weeks after lifting of the previous mandate.
   # If fixed_train_wks, this is max_train_wks + padding, so the full training window falls after the

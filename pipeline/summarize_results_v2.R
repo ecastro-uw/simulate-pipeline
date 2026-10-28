@@ -20,7 +20,7 @@ library(tools)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
-version_id <- '20261006.05'
+version_id <- '20261013.04'
 #missing_contexts <- ''
 inv_num <- 2
 

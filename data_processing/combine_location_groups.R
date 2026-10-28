@@ -4,18 +4,18 @@
 root <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
 
 # load list of locations by context
-locs <-       fread(paste0(root,'locs_by_context_inv2_0628.csv'))
-locs_pre2 <-  fread(paste0(root,'locs_by_context_inv2_TWO_WEEKS_PRE_v2.csv'))
-locs_pre1 <-  fread(paste0(root,'locs_by_context_inv2_ONE_WEEK_PRE_v2.csv'))
-locs_post1 <- fread(paste0(root,'locs_by_context_inv2_ONE_WEEK_POST_v2.csv'))
-locs_post2 <- fread(paste0(root,'locs_by_context_inv2_TWO_WEEKS_POST_v2.csv'))
+locs <-       fread(paste0(root,'locs_by_context_inv2_v3.csv'))
+locs_pre2 <-  fread(paste0(root,'locs_by_context_inv2_TWO_WEEKS_PRE_v3.csv'))
+locs_pre1 <-  fread(paste0(root,'locs_by_context_inv2_ONE_WEEK_PRE_v3.csv'))
+locs_post1 <- fread(paste0(root,'locs_by_context_inv2_ONE_WEEK_POST_v3.csv'))
+locs_post2 <- fread(paste0(root,'locs_by_context_inv2_TWO_WEEKS_POST_v3.csv'))
 
 # load mapping of context id to definition
-dt <-       fread(paste0(root,'context_lookup_inv2_0628.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
-dt_pre2 <-  fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_PRE_v2.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
-dt_pre1 <-  fread(paste0(root,'context_lookup_inv2_ONE_WEEK_PRE_v2.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
-dt_post1 <- fread(paste0(root,'context_lookup_inv2_ONE_WEEK_POST_v2.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
-dt_post2 <- fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_POST_v2.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
+dt <-       fread(paste0(root,'context_lookup_inv2_v3.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
+dt_pre2 <-  fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_PRE_v3.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
+dt_pre1 <-  fread(paste0(root,'context_lookup_inv2_ONE_WEEK_PRE_v3.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
+dt_post1 <- fread(paste0(root,'context_lookup_inv2_ONE_WEEK_POST_v3.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
+dt_post2 <- fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_POST_v3.csv'))[, .(context_id, mandate_type, mandate_num, state_abbrev)]
 
 # add context definitions to loc lookup files
 locs <-       merge(locs,       dt,       by='context_id')
@@ -50,7 +50,7 @@ context_lookup_new <- context_lookup_new[, .(context_id, mandate_type, mandate_n
 loc_lookup_new <- merge(context_lookup_new, locs_intersect[, .(mandate_type, mandate_num, state_abbrev, location_id)],
                         by=c('mandate_type', 'mandate_num', 'state_abbrev'))
 loc_lookup_new <- loc_lookup_new[order(context_id)][, .(context_id, location_id)]
-fwrite(loc_lookup_new, paste0(root, 'locs_by_context_inv2_intersect.csv'))
+fwrite(loc_lookup_new, paste0(root, 'locs_by_context_inv2_intersect_v3.csv'))
 
 # Finalize the context lookup
 context_lookup_new[, `:=` (country='USA',
@@ -63,11 +63,11 @@ context_lookup_new <- merge(context_lookup_new,
 # resolve models
 key_cols <- c("mandate_type", "mandate_num", "state_abbrev")
 model_cols <- paste0("model_", 1:11)
-dt <-       fread(paste0(root,'context_lookup_inv2_0628.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
-dt_pre2 <-  fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_PRE_v2.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
-dt_pre1 <-  fread(paste0(root,'context_lookup_inv2_ONE_WEEK_PRE_v2.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
-dt_post1 <- fread(paste0(root,'context_lookup_inv2_ONE_WEEK_POST_v2.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
-dt_post2 <- fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_POST_v2.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
+dt <-       fread(paste0(root,'context_lookup_inv2_v3.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
+dt_pre2 <-  fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_PRE_v3.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
+dt_pre1 <-  fread(paste0(root,'context_lookup_inv2_ONE_WEEK_PRE_v3.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
+dt_post1 <- fread(paste0(root,'context_lookup_inv2_ONE_WEEK_POST_v3.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
+dt_post2 <- fread(paste0(root,'context_lookup_inv2_TWO_WEEKS_POST_v3.csv'))[, .SD, .SDcols = c(key_cols, model_cols)]
 
 tables_list <- list(dt, dt_pre2, dt_pre1, dt_post1, dt_post2)
 stacked <- rbindlist(tables_list)
@@ -81,7 +81,7 @@ result <- stacked[, lapply(.SD, min), by = key_cols, .SDcols = model_cols]
 context_lookup_new <- merge(context_lookup_new, result, by=key_cols, all.x=T, sort=F)
 
 # organize columns to match original file
-col_names <- names(fread(paste0(root,'context_lookup_inv2_0628.csv')))
+col_names <- names(fread(paste0(root,'context_lookup_inv2_v3.csv')))
 context_lookup_new <- context_lookup_new[, .SD, .SDcols = col_names]
 
-fwrite(context_lookup_new, paste0(root, 'context_lookup_inv2_intersect.csv'))
+fwrite(context_lookup_new, paste0(root, 'context_lookup_inv2_intersect_v3.csv'))
