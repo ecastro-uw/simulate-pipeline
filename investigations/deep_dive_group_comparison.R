@@ -32,10 +32,14 @@ min_counties <- 10   # drop contexts with fewer counties than this
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
 root_dir  <- '/ihme/scratch/users/ems2285/thesis/outputs/outputs/'
 covar_dir <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/'
+lookup_path <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/context_lookup_inv2_intersect_v3.csv'
 
 ## LOADING
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
 list_of_cols <- c('context_id', 'mandate_num', 'mandate_type', 'state_abbrev', 'N')
+
+# Context definitions: number of counties (N), mandate type and number
+context_info <- fread(lookup_path)[, .(context_id, mandate_num, mandate_type, state_abbrev, N)]
 
 
 ### 1. CONVERT RESULTS TO BINARY AND COMBINE WEEKS
@@ -81,6 +85,20 @@ week0_col <- "0"
 # The week 0 version holds the unshifted mandate onset; use it for observed data
 week0_vers <- versions_dt[week==week0_col, version]
 
+# Drop contexts with fewer than min_counties counties (N in the context lookup table),
+# as well as any contexts missing from the lookup table
+all_contexts <- sort(unique(c(test1_dt$context_id, test2_dt$context_id)))
+context_info <- context_info[context_id %in% all_contexts]
+keep_ctx  <- context_info[N >= min_counties, context_id]
+not_in_lookup <- setdiff(all_contexts, context_info$context_id)
+if (length(not_in_lookup) > 0) message('Dropping ', length(not_in_lookup), ' context(s) not found in the context lookup table: ',
+                                       paste(not_in_lookup, collapse = ', '))
+message('Dropping ', context_info[N < min_counties, .N], ' of ', nrow(context_info),
+        ' contexts with fewer than ', min_counties, ' counties')
+test1_dt <- test1_dt[context_id %in% keep_ctx]
+test2_dt <- test2_dt[context_id %in% keep_ctx]
+context_info <- context_info[context_id %in% keep_ctx]
+
 
 ### 2. CATEGORIZE CONTEXTS
 
@@ -100,21 +118,9 @@ calc_obs_variability <- function(context){
   )
 }
 
-all_contexts <- sort(unique(c(test1_dt$context_id, test2_dt$context_id)))
-obs_results  <- lapply(all_contexts, calc_obs_variability)
+obs_results  <- lapply(context_info$context_id, calc_obs_variability)
 obs_var_dt   <- rbindlist(lapply(obs_results, `[[`, 'var_dt'))
 context_counties <- rbindlist(lapply(obs_results, `[[`, 'county_dt'))
-
-# Drop contexts with fewer than min_counties counties (counted from the obs_context file)
-n_counties  <- context_counties[, .(n_counties = .N), by = context_id]
-small_ctx   <- n_counties[n_counties < min_counties, context_id]
-small_ctx   <- c(small_ctx, setdiff(all_contexts, n_counties$context_id))
-message('Dropping ', length(small_ctx), ' of ', length(all_contexts),
-        ' contexts with fewer than ', min_counties, ' counties')
-test1_dt <- test1_dt[! context_id %in% small_ctx]
-test2_dt <- test2_dt[! context_id %in% small_ctx]
-obs_var_dt <- obs_var_dt[! context_id %in% small_ctx]
-context_counties <- context_counties[! context_id %in% small_ctx]
 
 # Low/high split: median variability across all retained contexts, so that a given
 # context receives the same low/high label under both tests
@@ -129,7 +135,10 @@ group_labels <- c(A = 'A: week 0 only',
                   D = 'D: other')
 
 assign_groups <- function(dt){
-  dt <- merge(copy(dt), obs_var_dt, by = 'context_id', all.x = TRUE)
+  # take mandate type/number from the context lookup table
+  dt <- merge(copy(dt)[, .SD, .SDcols = c('context_id', week_cols)],
+              context_info[, .(context_id, mandate_num, mandate_type)], by = 'context_id')
+  dt <- merge(dt, obs_var_dt, by = 'context_id', all.x = TRUE)
   dt[, n_pos := rowSums(.SD), .SDcols = week_cols]
   dt[, group := fcase(
     get(week0_col) == 1 & n_pos == 1,       'A',
@@ -155,10 +164,7 @@ print(dcast(test2_dt, mandate_num + mandate_type ~ group, fun.aggregate = length
 # Every covariate is computed over the counties included in the context's
 # obs_context file (week 0 version)
 
-# Context definitions (one row per context)
-context_info <- unique(rbind(test1_dt[, .(context_id, mandate_num, mandate_type, state_abbrev)],
-                             test2_dt[, .(context_id, mandate_num, mandate_type, state_abbrev)]))
-county_map <- merge(context_counties, context_info, by = 'context_id')
+county_map <- merge(context_counties, context_info[, .(context_id, mandate_num, mandate_type)], by = 'context_id')
 
 # Population
 pop_dt <- fread(paste0(covar_dir, 'population.csv'))[, .(location_id, pop)]
