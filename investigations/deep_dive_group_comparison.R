@@ -15,7 +15,8 @@
 #       (e) cumulative COVID cases per 10K pop at mandate onset
 #       (f) population
 #     separately for each mandate category (first/second restaurant/bar closures).
-# Contexts with fewer than min_counties counties are dropped.
+# Contexts come from the context lookup table (dropping those with N < min_counties);
+# the counties in each context come from the locs_by_context file.
 
 ## SET UP
 # libraries
@@ -32,14 +33,28 @@ min_counties <- 10   # drop contexts with fewer counties than this
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
 root_dir  <- '/ihme/scratch/users/ems2285/thesis/outputs/outputs/'
 covar_dir <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/'
-lookup_path <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/context_lookup_inv2_intersect_v3.csv'
+config_dir  <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
+lookup_path <- paste0(config_dir, 'context_lookup_inv2_intersect_v3.csv')   # which contexts to analyze
+locs_path   <- paste0(config_dir, 'locs_by_context_inv2_intersect_v3.csv')   # which counties are in each context
 
 ## LOADING
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
 list_of_cols <- c('context_id', 'mandate_num', 'mandate_type', 'state_abbrev', 'N')
 
-# Context definitions: number of counties (N), mandate type and number
+# Contexts to analyze: every context in the lookup table with at least min_counties counties (N)
 context_info <- fread(lookup_path)[, .(context_id, mandate_num, mandate_type, state_abbrev, N)]
+message('Dropping ', context_info[N < min_counties, .N], ' of ', nrow(context_info),
+        ' contexts in the lookup table with fewer than ', min_counties, ' counties')
+context_info <- context_info[N >= min_counties]
+
+# Counties in each context
+context_counties <- fread(locs_path)[context_id %in% context_info$context_id, .(context_id, location_id)]
+n_check <- merge(context_info[, .(context_id, N)], context_counties[, .(n_locs = .N), by = context_id],
+                 by = 'context_id', all.x = TRUE)
+if (n_check[is.na(n_locs) | n_locs != N, .N] > 0) {
+  warning('N in the context lookup table does not match the number of counties in the locs_by_context file for context(s): ',
+          paste(n_check[is.na(n_locs) | n_locs != N, context_id], collapse = ', '))
+}
 
 
 ### 1. CONVERT RESULTS TO BINARY AND COMBINE WEEKS
@@ -85,19 +100,15 @@ week0_col <- "0"
 # The week 0 version holds the unshifted mandate onset; use it for observed data
 week0_vers <- versions_dt[week==week0_col, version]
 
-# Drop contexts with fewer than min_counties counties (N in the context lookup table),
-# as well as any contexts missing from the lookup table
+# Keep only the contexts selected from the lookup table
 all_contexts <- sort(unique(c(test1_dt$context_id, test2_dt$context_id)))
+no_results <- setdiff(context_info$context_id, all_contexts)
+if (length(no_results) > 0) warning('No test results found for context(s) in the lookup table: ',
+                                    paste(no_results, collapse = ', '))
+test1_dt <- test1_dt[context_id %in% context_info$context_id]
+test2_dt <- test2_dt[context_id %in% context_info$context_id]
 context_info <- context_info[context_id %in% all_contexts]
-keep_ctx  <- context_info[N >= min_counties, context_id]
-not_in_lookup <- setdiff(all_contexts, context_info$context_id)
-if (length(not_in_lookup) > 0) message('Dropping ', length(not_in_lookup), ' context(s) not found in the context lookup table: ',
-                                       paste(not_in_lookup, collapse = ', '))
-message('Dropping ', context_info[N < min_counties, .N], ' of ', nrow(context_info),
-        ' contexts with fewer than ', min_counties, ' counties')
-test1_dt <- test1_dt[context_id %in% keep_ctx]
-test2_dt <- test2_dt[context_id %in% keep_ctx]
-context_info <- context_info[context_id %in% keep_ctx]
+context_counties <- context_counties[context_id %in% all_contexts]
 
 
 ### 2. CATEGORIZE CONTEXTS
@@ -106,21 +117,19 @@ context_info <- context_info[context_id %in% keep_ctx]
 # For each county, variability = SD of the week-to-week change in y (log normalized
 # visits) over the pre-mandate weeks (time_id < 0). Differencing removes the
 # pre-mandate trend so that only the noise is captured. The context-level value is
-# the median across the context's counties.
+# the median across the context's counties (as listed in the locs_by_context file).
 calc_obs_variability <- function(context){
+  ctx_locs <- context_counties[context_id == context, location_id]
   obs_dt <- fread(paste0(root_dir, week0_vers, '/batched_output/obs_context_', context, '.csv'))[
-    time_id < 0 & !is.na(y), .(location_id, time_id, y)]
+    time_id < 0 & !is.na(y) & location_id %in% ctx_locs, .(location_id, time_id, y)]
+  n_missing <- length(setdiff(ctx_locs, obs_dt$location_id))
+  if (n_missing > 0) message('Context ', context, ': ', n_missing, ' county(ies) have no observed mobility data')
   setorder(obs_dt, location_id, time_id)
   county_var <- obs_dt[, .(sd_diff = sd(diff(y))), by = location_id]
-  list(
-    var_dt = data.table(context_id = context, obs_var = median(county_var$sd_diff, na.rm = TRUE)),
-    county_dt = data.table(context_id = context, location_id = unique(obs_dt$location_id))
-  )
+  data.table(context_id = context, obs_var = median(county_var$sd_diff, na.rm = TRUE))
 }
 
-obs_results  <- lapply(context_info$context_id, calc_obs_variability)
-obs_var_dt   <- rbindlist(lapply(obs_results, `[[`, 'var_dt'))
-context_counties <- rbindlist(lapply(obs_results, `[[`, 'county_dt'))
+obs_var_dt <- rbindlist(lapply(context_info$context_id, calc_obs_variability))
 
 # Low/high split: median variability across all retained contexts, so that a given
 # context receives the same low/high label under both tests
@@ -161,8 +170,8 @@ print(dcast(test2_dt, mandate_num + mandate_type ~ group, fun.aggregate = length
 
 
 ### 3. CONTEXT-LEVEL COVARIATES
-# Every covariate is computed over the counties included in the context's
-# obs_context file (week 0 version)
+# Every covariate is computed over the counties listed for the context in the
+# locs_by_context file
 
 county_map <- merge(context_counties, context_info[, .(context_id, mandate_num, mandate_type)], by = 'context_id')
 
