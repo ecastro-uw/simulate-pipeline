@@ -14,6 +14,8 @@
 #       (d) baseline visit heterogeneity - CV of county-level baseline visit volume
 #       (e) cumulative COVID cases per 10K pop at mandate onset
 #       (f) population
+#     separately for each mandate category (first/second restaurant/bar closures).
+# Contexts with fewer than min_counties counties are dropped.
 
 ## SET UP
 # libraries
@@ -22,8 +24,9 @@ library(ggplot2)
 library(patchwork)
 
 # args
-Scenario <- 'C'
+Scenario <- 'C_new'
 alpha    <- 0.05
+min_counties <- 10   # drop contexts with fewer counties than this
 
 # dirs
 versions_path <- '/ihme/scratch/users/ems2285/thesis/inputs/sensitivity_version_ids.csv'
@@ -102,8 +105,19 @@ obs_results  <- lapply(all_contexts, calc_obs_variability)
 obs_var_dt   <- rbindlist(lapply(obs_results, `[[`, 'var_dt'))
 context_counties <- rbindlist(lapply(obs_results, `[[`, 'county_dt'))
 
-# Low/high split: median variability across ALL contexts, so that a given context
-# receives the same low/high label under both tests
+# Drop contexts with fewer than min_counties counties (counted from the obs_context file)
+n_counties  <- context_counties[, .(n_counties = .N), by = context_id]
+small_ctx   <- n_counties[n_counties < min_counties, context_id]
+small_ctx   <- c(small_ctx, setdiff(all_contexts, n_counties$context_id))
+message('Dropping ', length(small_ctx), ' of ', length(all_contexts),
+        ' contexts with fewer than ', min_counties, ' counties')
+test1_dt <- test1_dt[! context_id %in% small_ctx]
+test2_dt <- test2_dt[! context_id %in% small_ctx]
+obs_var_dt <- obs_var_dt[! context_id %in% small_ctx]
+context_counties <- context_counties[! context_id %in% small_ctx]
+
+# Low/high split: median variability across all retained contexts, so that a given
+# context receives the same low/high label under both tests
 var_threshold <- median(obs_var_dt$obs_var, na.rm = TRUE)
 obs_var_dt[, var_cat := ifelse(obs_var <= var_threshold, 'low', 'high')]
 message('Mobility variability threshold (median SD of weekly change in y): ', round(var_threshold, 4))
@@ -133,8 +147,8 @@ assign_groups <- function(dt){
 test1_dt <- assign_groups(test1_dt)
 test2_dt <- assign_groups(test2_dt)
 
-print(test1_dt[, .N, by = group][order(group)])
-print(test2_dt[, .N, by = group][order(group)])
+print(dcast(test1_dt, mandate_num + mandate_type ~ group, fun.aggregate = length, value.var = 'context_id'))
+print(dcast(test2_dt, mandate_num + mandate_type ~ group, fun.aggregate = length, value.var = 'context_id'))
 
 
 ### 3. CONTEXT-LEVEL COVARIATES
@@ -211,16 +225,19 @@ covar_info <- data.table(
 
 
 ### 4. STATISTICAL TESTS
-# For each test and covariate:
+# Separately for each test, mandate category and covariate:
 #  - one-way ANOVA across the four groups (log scale for skewed variables)
-#  - ANOVA adjusted for mandate type and imposition (baseline visits in particular
-#    differ systematically between restaurants and bars)
 #  - Kruskal-Wallis test (non-parametric; robust to small, skewed groups)
 #  - pairwise Wilcoxon tests (Holm-adjusted) when Kruskal-Wallis p < alpha
 
-compare_groups <- function(test_dt, test_name){
-  dt <- merge(test_dt[!is.na(group), .(context_id, mandate_num, mandate_type, group)],
+mandate_cats <- CJ(mandate_num = c('first', 'second'), mandate_type = c('restaurant', 'bar'))
+mandate_cats[, category := paste(mandate_num, mandate_type)]
+
+compare_groups <- function(test_dt, test_name, m_num, m_type){
+  dt <- merge(test_dt[!is.na(group) & mandate_num == m_num & mandate_type == m_type,
+                      .(context_id, mandate_num, mandate_type, group)],
               covars_dt, by = 'context_id')
+  category <- paste(m_num, m_type)
 
   summary_list  <- list()
   pairwise_list <- list()
@@ -234,45 +251,50 @@ compare_groups <- function(test_dt, test_name){
     sub <- sub[group %in% keep]
     sub[, group := droplevels(group)]
 
-    anova_p <- adj_p <- kw_p <- NA_real_
+    anova_p <- kw_p <- NA_real_
     if (uniqueN(sub$group) >= 2) {
       anova_p <- summary(aov(y ~ group, data = sub))[[1]][['Pr(>F)']][1]
-      adj_p <- tryCatch({
-        adj_fit <- lm(y ~ group + mandate_type + mandate_num, data = sub)
-        drop1(adj_fit, scope = ~group, test = 'F')[['Pr(>F)']][2]
-      }, error = function(e) NA_real_)
       kw_p <- kruskal.test(sub[[v]], sub$group)$p.value
 
       if (!is.na(kw_p) && kw_p < alpha) {
         pw <- pairwise.wilcox.test(sub[[v]], sub$group, p.adjust.method = 'holm', exact = FALSE)$p.value
         pw <- as.data.table(as.table(pw))[!is.na(N)]
         setnames(pw, c('group_1', 'group_2', 'p_holm'))
-        pairwise_list[[v]] <- cbind(test = test_name, variable = v, pw)
+        pairwise_list[[v]] <- cbind(test = test_name, category = category, variable = v, pw)
       }
     }
 
     # group medians (original scale) for interpretation
     meds <- dt[!is.na(get(v)), .(median = as.numeric(median(get(v)))), by = group]
-    meds <- dcast(meds, . ~ group, value.var = 'median')[, -1]
-    setnames(meds, paste0('median_', substr(names(meds), 1, 1)))
+    meds <- if (nrow(meds) > 0) dcast(meds, . ~ group, value.var = 'median')[, -1] else data.table()
+    if (ncol(meds) > 0) setnames(meds, paste0('median_', substr(names(meds), 1, 1)))
 
     summary_list[[v]] <- cbind(
-      data.table(test = test_name, variable = v, label = covar_info[i, label],
-                 n_contexts = nrow(sub),
-                 anova_p = anova_p, anova_adj_p = adj_p, kruskal_p = kw_p),
+      data.table(test = test_name, category = category, variable = v, label = covar_info[i, label],
+                 n_contexts = nrow(sub), n_groups = uniqueN(sub$group),
+                 anova_p = anova_p, kruskal_p = kw_p),
       meds)
   }
 
-  list(data = dt,
+  list(test = test_name, category = category, data = dt,
        summary = rbindlist(summary_list, fill = TRUE),
        pairwise = rbindlist(pairwise_list, fill = TRUE))
 }
 
-res_test1 <- compare_groups(test1_dt, 'Test 1')
-res_test2 <- compare_groups(test2_dt, 'Test 2')
+results <- list()
+for (k in seq_len(nrow(mandate_cats))) {
+  m_num  <- mandate_cats[k, mandate_num]
+  m_type <- mandate_cats[k, mandate_type]
+  results[[paste('Test 1', m_num, m_type)]] <- compare_groups(test1_dt, 'Test 1', m_num, m_type)
+  results[[paste('Test 2', m_num, m_type)]] <- compare_groups(test2_dt, 'Test 2', m_num, m_type)
+}
 
-summary_dt  <- rbind(res_test1$summary, res_test2$summary, fill = TRUE)
-pairwise_dt <- rbind(res_test1$pairwise, res_test2$pairwise, fill = TRUE)
+summary_dt  <- rbindlist(lapply(results, `[[`, 'summary'), fill = TRUE)
+pairwise_dt <- rbindlist(lapply(results, `[[`, 'pairwise'), fill = TRUE)
+setcolorder(summary_dt, intersect(c('test', 'category', 'variable', 'label', 'n_contexts', 'n_groups',
+                                    'anova_p', 'kruskal_p', paste0('median_', names(group_labels))),
+                                  names(summary_dt)))
+setorder(summary_dt, test, category)
 
 num_cols <- names(summary_dt)[sapply(summary_dt, is.numeric)]
 print(copy(summary_dt)[, (num_cols) := lapply(.SD, signif, 3), .SDcols = num_cols][])
@@ -280,7 +302,8 @@ if (nrow(pairwise_dt) > 0) print(pairwise_dt)
 
 
 ### 5. PLOTS
-plot_groups <- function(res, test_name){
+plot_groups <- function(res){
+  if (nrow(res$data) == 0) return(NULL)
   plot_dt <- melt(res$data, id.vars = c('context_id', 'group'),
                   measure.vars = covar_info$var, variable.name = 'var')
   plot_dt <- merge(plot_dt, covar_info, by = 'var')
@@ -300,12 +323,10 @@ plot_groups <- function(res, test_name){
     scale_x_discrete(name = NULL, labels = function(x) substr(x, 1, 1)) +
     scale_y_continuous(name = NULL) +
     theme_bw() +
-    ggtitle(paste(test_name, ': context characteristics by verdict group'),
+    ggtitle(paste0(res$test, ', ', res$category, ' closures: context characteristics by verdict group'),
             subtitle = paste(paste(group_labels, collapse = '; '), '\n(population and cases shown as log10(x + 1))'))
 }
 
-p1 <- plot_groups(res_test1, 'Test 1')
-p2 <- plot_groups(res_test2, 'Test 2')
-
-p1
-p2
+# one plot per test x mandate category
+plots <- Filter(Negate(is.null), lapply(results, plot_groups))
+for (p in plots) print(p)
