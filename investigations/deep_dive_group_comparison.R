@@ -327,6 +327,8 @@ plot_groups <- function(res){
   plot_dt <- melt(res$data, id.vars = c('context_id', 'group'),
                   measure.vars = covar_info$var, variable.name = 'var')
   plot_dt <- merge(plot_dt, covar_info, by = 'var')
+  # label each point with its state abbreviation
+  plot_dt <- merge(plot_dt, context_info[, .(context_id, state_abbrev)], by = 'context_id')
   # log10 scale for the most skewed variables
   plot_dt[var %in% c('population', 'cases_per_10k'), value := log10(value + 1)]
   plot_dt[, label := factor(label, levels = covar_info$label)]
@@ -335,8 +337,9 @@ plot_groups <- function(res){
   pvals[, label := factor(label, levels = covar_info$label)]
 
   ggplot(plot_dt[!is.na(value)], aes(x = group, y = value)) +
-    geom_boxplot(outlier.shape = NA) +
-    geom_jitter(width = 0.15, alpha = 0.6) +
+    geom_boxplot(outlier.shape = NA, colour = 'grey65') +
+    geom_text(aes(label = state_abbrev), size = 2.5, alpha = 0.8,
+              position = position_jitter(width = 0.2, height = 0, seed = 1)) +
     geom_text(data = pvals, aes(x = -Inf, y = Inf, label = paste0('KW p = ', signif(kruskal_p, 2))),
               hjust = -0.1, vjust = 1.5, size = 3) +
     facet_wrap(~label, scales = 'free_y') +
