@@ -1,9 +1,9 @@
-# Compare context-level characteristics across Test 1 / Test 2 verdict groups
+# Compare context-level characteristics across results groups
 #
 # (1) For each test, convert the result to a binary 1/0 and combine the
-#     sensitivity weeks (-2, -1, 0, 1, 2) into one wide table (as in deep_dive.R)
-# (2) Categorize every context (row of test*_dt) into one of four groups:
-#       A: only week 0 = 1, all other weeks = 0
+#     sensitivity weeks (-2, -1, 0, 1, 2) into one wide table
+# (2) Categorize every context into one of four groups:
+#       A: only t0 = 1, all other weeks = 0
 #       B: all weeks = 0 and observed mobility has LOW variability
 #       C: all weeks = 0 and observed mobility has HIGH variability
 #       D: other
@@ -14,9 +14,10 @@
 #       (d) baseline visit heterogeneity - CV of county-level baseline visit volume
 #       (e) cumulative COVID cases per 10K pop at mandate onset
 #       (f) population
-#     separately for each mandate category (first/second restaurant/bar closures).
-# Contexts come from the context lookup table (dropping those with N < min_counties);
-# the counties in each context come from the locs_by_context file.
+#     Do this separately for each mandate category (first/second restaurant/bar closures).
+
+# Contexts come from the context lookup table (dropping those with N < min_counties).
+# The counties in each context come from the locs_by_context file.
 
 ## SET UP
 # libraries
@@ -150,10 +151,10 @@ assign_groups <- function(dt){
   dt <- merge(dt, obs_var_dt, by = 'context_id', all.x = TRUE)
   dt[, n_pos := rowSums(.SD), .SDcols = week_cols]
   dt[, group := fcase(
-    get(week0_col) == 1 & n_pos == 1,       'A',
-    n_pos == 0 & var_cat == 'low',           'B',
-    n_pos == 0 & var_cat == 'high',          'C',
-    n_pos > 0,                               'D'
+    get(week0_col) == 1 & n_pos == 1,  'A',
+    n_pos == 0 & var_cat == 'low',     'B',
+    n_pos == 0 & var_cat == 'high',    'C',
+    n_pos > 0,                         'D'
   )]
   # contexts missing a result for any week (or missing obs data, if all weeks = 0) are left unassigned
   n_missing <- dt[is.na(group), .N]
@@ -192,7 +193,8 @@ covars_dt <- merge(covars_dt, pol_dt, by = 'context_id', all.x = TRUE)
 
 ## (c), (d) Baseline visit volume and heterogeneity (2019)
 sg_dt <- fread(paste0(covar_dir, 'processed_safegraph_data.csv'))[
-  date >= '2019-01-01' & date <= '2019-12-31', .(location_id, date, top_category, visit_count)]
+  location_id %in% unique(context_counties$location_id) & date >= '2019-01-01' & date <= '2019-12-31',
+  .(location_id, date, top_category, visit_count)]
 sg_dt[, mandate_type := fcase(top_category %like% 'Restaurant', 'restaurant',
                               top_category %like% 'Drinking',   'bar')]
 sg_dt <- sg_dt[!is.na(mandate_type) & !is.na(visit_count),
@@ -224,8 +226,7 @@ cases_ctx <- merge(county_map[, .(context_id, location_id, mandate_num, mandate_
                    by = c('location_id', 'mandate_num', 'mandate_type'))
 cases_ctx <- merge(cases_ctx, cases_dt, by.x = c('location_id', 'onset_date'),
                    by.y = c('location_id', 'date'), all.x = TRUE)
-# no row on the onset date means no cases had been reported yet
-cases_ctx[is.na(cuml_cases), cuml_cases := 0]
+
 cases_ctx <- cases_ctx[, .(cases_per_10k = sum(cuml_cases) / sum(pop) * 10000), by = context_id]
 covars_dt <- merge(covars_dt, cases_ctx, by = 'context_id', all.x = TRUE)
 
@@ -238,6 +239,8 @@ covar_info <- data.table(
   log_for_anova = c(FALSE, FALSE, TRUE, FALSE, TRUE, TRUE)
 )
 
+# Drop baseline visits for now
+covar_info <- covar_info[! var %like% 'base']
 
 ### 4. STATISTICAL TESTS
 # Separately for each test, mandate category and covariate:
@@ -315,6 +318,8 @@ num_cols <- names(summary_dt)[sapply(summary_dt, is.numeric)]
 print(copy(summary_dt)[, (num_cols) := lapply(.SD, signif, 3), .SDcols = num_cols][])
 if (nrow(pairwise_dt) > 0) print(pairwise_dt)
 
+fwrite(copy(summary_dt)[, (num_cols) := lapply(.SD, signif, 3), .SDcols = num_cols][],
+       paste0(root_dir, week0_vers,'/group_comparison.csv'))
 
 ### 5. PLOTS
 plot_groups <- function(res){
