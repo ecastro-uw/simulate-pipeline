@@ -24,6 +24,8 @@
 library(data.table)
 library(ggplot2)
 library(patchwork)
+library(sf)
+source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
 Scenario <- 'C_new'
@@ -41,12 +43,17 @@ locs_path   <- paste0(config_dir, 'locs_by_context_inv2_intersect_v3.csv')   # w
 ## LOADING
 versions_dt <- fread(versions_path, colClasses = 'character')[scenario==Scenario]
 list_of_cols <- c('context_id', 'mandate_num', 'mandate_type', 'state_abbrev', 'N')
+states_dt <- get_location_metadata(location_set_id = 128, release_id = 9)[
+  level==2, .(loc_id = location_id, state_abbrev = gsub('US-','',local_id))]
 
 # Contexts to analyze: every context in the lookup table with at least min_counties counties (N)
 context_info <- fread(lookup_path)[, .(context_id, mandate_num, mandate_type, state_abbrev, N)]
 message('Dropping ', context_info[N < min_counties, .N], ' of ', nrow(context_info),
         ' contexts in the lookup table with fewer than ', min_counties, ' counties')
 context_info <- context_info[N >= min_counties]
+
+# Mapping of context_id to state location_id
+context_state_map <- merge(context_info[, .(context_id, state_abbrev)], states_dt, by='state_abbrev')
 
 # Counties in each context
 context_counties <- fread(locs_path)[context_id %in% context_info$context_id, .(context_id, location_id)]
@@ -263,7 +270,7 @@ compare_groups <- function(test_dt, test_name, m_num, m_type){
   for (i in seq_len(nrow(covar_info))) {
     v <- covar_info[i, var]
     sub <- dt[!is.na(get(v)) & is.finite(get(v))]
-    sub[, y := if (covar_info[i, log_for_anova]) log(get(v) + 1) else get(v)]
+    sub[, y := if (covar_info[i, log_for_anova]) log(get(v)) else get(v)]
     # only keep groups with at least 2 contexts
     keep <- sub[, .N, by = group][N >= 2, group]
     sub <- sub[group %in% keep]
@@ -329,8 +336,8 @@ plot_groups <- function(res){
   plot_dt <- merge(plot_dt, covar_info, by = 'var')
   # label each point with its state abbreviation
   plot_dt <- merge(plot_dt, context_info[, .(context_id, state_abbrev)], by = 'context_id')
-  # log10 scale for the most skewed variables
-  plot_dt[var %in% c('population', 'cases_per_10k'), value := log10(value + 1)]
+  # log scale for the most skewed variables
+  plot_dt[var %in% c('population', 'cases_per_10k'), value := log(value)]
   plot_dt[, label := factor(label, levels = covar_info$label)]
   # annotate each panel with the Kruskal-Wallis p-value
   pvals <- merge(res$summary[, .(var = variable, kruskal_p)], covar_info[, .(var, label)], by = 'var')
@@ -347,9 +354,99 @@ plot_groups <- function(res){
     scale_y_continuous(name = NULL) +
     theme_bw() +
     ggtitle(paste0(res$test, ', ', res$category, ' closures: context characteristics by verdict group'),
-            subtitle = paste(paste(group_labels, collapse = '; '), '\n(population and cases shown as log10(x + 1))'))
+            subtitle = paste(paste(group_labels, collapse = '; '), '\n(population and cases shown as log(x))'))
 }
 
 # one plot per test x mandate category
 plots <- Filter(Negate(is.null), lapply(results, plot_groups))
 for (p in plots) print(p)
+
+
+### 6. MAPS
+
+# Load and subset shape file once
+shape_file_path <- "/snfs1/WORK/11_geospatial/admin_shapefiles/2024_07_29/lbd_standard_admin_1.shp"
+map_data <- st_read(shape_file_path)
+map_data <- map_data[map_data$ADM0_NAME == 'United States', ]
+map_data <- map_data[-which(map_data$ADM1_NAME %in% c("Alaska", "Hawaii")), ]
+
+# Define shared interval factor levels and colors (same for both mandate types)
+group_levels <- c('YYGYY', 'YYYYY (low)', 'YYYYY (high)', 'other')
+group_colors <- setNames(c('#48A860','#F8DE7E','#FF7F00','#225EA8'), group_levels)
+#group_colors   <- setNames(brewer.pal(4, "YlGnBu"), group_levels)
+
+# Define plot theme
+map_theme <- theme(
+  panel.background  = element_blank(),
+  axis.text         = element_blank(),
+  axis.ticks        = element_blank(),
+  plot.title        = element_text(size = 12),
+  legend.key.size   = unit(0.4, "cm"),
+  legend.text       = element_text(size = 11),
+  legend.title      = element_text(size = 11) #,
+  #plot.margin       = margin(0,0,0,0)
+)
+
+# Define plot title
+main_title <- "Test 2"
+
+# Make one plot for each mandate type
+mandate_types <- c('restaurant', 'bar')
+plot_list <- list()
+
+for (mandate_type in mandate_types){
+  # Prep the data for plotting
+  if(mandate_type=='restaurant'){
+    data_to_map <- copy(results$`Test 2 first restaurant`$data)
+    subtitle <- "First Restaurant Mandate"
+  } else {
+    data_to_map <- results$`Test 2 first bar`$data
+    subtitle <- "First Bar Mandate"
+  }
+
+  data_to_map[, group_cat := factor(
+    fcase(
+      group %like% 'A', 'YYGYY',
+      group %like% 'B', 'YYYYY (low)',
+      group %like% 'C', 'YYYYY (high)',
+      default =         'other'
+    ),
+  levels = group_levels
+  )]
+
+  # Add location_id
+  data_to_map <- merge(data_to_map, context_state_map, by='context_id')
+
+  # Add data to shape file
+  map_dt <- merge(
+    map_data,
+    data_to_map[, .(loc_id, group_cat)],
+    by = 'loc_id', all.x = TRUE
+  )
+
+  # Make the map
+  map <- ggplot(map_dt) +
+    geom_sf(aes(geometry = geometry, fill = group_cat)) +
+    scale_fill_manual(
+      name     = "Result Group",
+      values   = group_colors,
+      na.value = "#48494B"
+    ) +
+    labs(title = subtitle) +
+  map_theme
+  
+  if(mandate_type=='bar'){
+    map <- map +
+      theme(legend.position = 'none')
+  }
+
+  plot_list[[mandate_type]] <- map
+}
+
+plot_list$restaurant + plot_list$bar 
+
+
+### 7. Effect Size
+
+# load effect size estimates by context
+eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))
