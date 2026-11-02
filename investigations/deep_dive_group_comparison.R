@@ -364,86 +364,55 @@ for (p in plots) print(p)
 
 ### 6. MAPS
 
-# Load and subset shape file once
+# Load and subset shape file once (contiguous US)
 shape_file_path <- "/snfs1/WORK/11_geospatial/admin_shapefiles/2024_07_29/lbd_standard_admin_1.shp"
-map_data <- st_read(shape_file_path)
-map_data <- map_data[map_data$ADM0_NAME == 'United States', ]
-map_data <- map_data[-which(map_data$ADM1_NAME %in% c("Alaska", "Hawaii")), ]
+states_sf <- st_read(shape_file_path, quiet = TRUE)
+states_sf <- states_sf[states_sf$ADM0_NAME == "United States" &
+                       !(states_sf$ADM1_NAME %in% c("Alaska", "Hawaii")), ]
 
-# Define shared interval factor levels and colors (same for both mandate types)
-group_levels <- c('YYGYY', 'YYYYY (low)', 'YYYYY (high)', 'other')
-group_colors <- setNames(c('#48A860','#F8DE7E','#FF7F00','#225EA8'), group_levels)
-#group_colors   <- setNames(brewer.pal(4, "YlGnBu"), group_levels)
+# Shared categories and colors (same for every map, so one legend covers all)
+map_levels <- c("YYGYY", "YYYYY (low var)", "YYYYY (high var)", "Other",
+                "Excluded (< 10 counties)", "No mandate / unassigned")
+map_colors <- setNames(c("#48A860", "#FDD03B", "#FF7F00", "#9AA5B1", "grey75", "grey92"), map_levels)
+letter_to_cat <- c(A = "YYGYY", B = "YYYYY (low var)", C = "YYYYY (high var)", D = "Other")
 
-# Define plot theme
-map_theme <- theme(
-  panel.background  = element_blank(),
-  axis.text         = element_blank(),
-  axis.ticks        = element_blank(),
-  plot.title        = element_text(size = 12),
-  legend.key.size   = unit(0.4, "cm"),
-  legend.text       = element_text(size = 11),
-  legend.title      = element_text(size = 11) #,
-  #plot.margin       = margin(0,0,0,0)
-)
+# Full lookup table (before the min_counties filter), to flag states excluded for size
+all_lookup <- fread(lookup_path)[, .(mandate_num, mandate_type, state_abbrev, N)]
 
-# Define plot title
-main_title <- "Test 2"
+# Map the result group of each state's context for one test x mandate category
+map_groups <- function(res_name, show_legend = TRUE){
+  res <- results[[res_name]]
+  m_num  <- res$data$mandate_num[1]
+  m_type <- res$data$mandate_type[1]
 
-# Make one plot for each mandate type
-mandate_types <- c('restaurant', 'bar')
-plot_list <- list()
+  # group letter -> map category (copy so results is not modified)
+  dt <- copy(res$data)[, .(context_id, cat = unname(letter_to_cat[substr(as.character(group), 1, 1)]))]
+  dt <- merge(dt, context_state_map[, .(context_id, state_abbrev)], by = "context_id")[, .(state_abbrev, cat)]
 
-for (mandate_type in mandate_types){
-  # Prep the data for plotting
-  if(mandate_type=='restaurant'){
-    data_to_map <- copy(results$`Test 2 first restaurant`$data)
-    subtitle <- "First Restaurant Mandate"
-  } else {
-    data_to_map <- results$`Test 2 first bar`$data
-    subtitle <- "First Bar Mandate"
-  }
+  # states whose context was too small to analyze
+  small <- all_lookup[mandate_num == m_num & mandate_type == m_type & N < min_counties,
+                      .(state_abbrev, cat = "Excluded (< 10 counties)")]
+  dt <- merge(rbind(dt, small), states_dt, by = "state_abbrev")
 
-  data_to_map[, group_cat := factor(
-    fcase(
-      group %like% 'A', 'YYGYY',
-      group %like% 'B', 'YYYYY (low)',
-      group %like% 'C', 'YYYYY (high)',
-      default =         'other'
-    ),
-  levels = group_levels
-  )]
+  map_sf <- merge(states_sf, dt[, .(loc_id, cat)], by = "loc_id", all.x = TRUE)
+  map_sf$cat[is.na(map_sf$cat)] <- "No mandate / unassigned"
+  map_sf$cat <- factor(map_sf$cat, levels = map_levels)
 
-  # Add location_id
-  data_to_map <- merge(data_to_map, context_state_map, by='context_id')
-
-  # Add data to shape file
-  map_dt <- merge(
-    map_data,
-    data_to_map[, .(loc_id, group_cat)],
-    by = 'loc_id', all.x = TRUE
-  )
-
-  # Make the map
-  map <- ggplot(map_dt) +
-    geom_sf(aes(geometry = geometry, fill = group_cat)) +
-    scale_fill_manual(
-      name     = "Result Group",
-      values   = group_colors,
-      na.value = "#48494B"
-    ) +
-    labs(title = subtitle) +
-  map_theme
-  
-  if(mandate_type=='bar'){
-    map <- map +
-      theme(legend.position = 'none')
-  }
-
-  plot_list[[mandate_type]] <- map
+  ggplot(map_sf) +
+    geom_sf(aes(fill = cat), colour = "white", linewidth = 0.2) +
+    coord_sf(crs = 5070) +   # CONUS Albers equal-area
+    scale_fill_manual(name = "Result group", values = map_colors, drop = FALSE,
+                      guide = if (show_legend) "legend" else "none") +
+    labs(title = paste(tools::toTitleCase(m_num), m_type, "mandate")) +
+    theme_void(base_size = 11)
 }
 
-plot_list$restaurant + plot_list$bar 
+# Side-by-side maps with a single shared legend (drop = FALSE keeps every category in it)
+(map_groups("Test 2 first restaurant") + map_groups("Test 2 first bar", show_legend = FALSE)) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Test 2: result group by state",
+                  caption = "No mandate / unassigned: state had no such mandate, or its group could not be assigned (missing results).") &
+  theme(legend.position = "bottom")
 
 
 ### 7. Effect Size
