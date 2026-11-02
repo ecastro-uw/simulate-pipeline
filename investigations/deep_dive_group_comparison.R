@@ -418,7 +418,8 @@ map_groups <- function(res_name, show_legend = TRUE){
 ### 7. Effect Size
 
 # load effect size estimates by context
-eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))eff_dt <- eff_dt[, .(context_id, RR_median, RR_lower, RR_upper)]
+eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))
+eff_dt <- eff_dt[, .(context_id, RR_median, RR_lower, RR_upper)]
 
 # Plot effect size (median and interval) against each covariate for group A
 # ("week 0 only") contexts. Groups come from Test 2, which is the test based on
