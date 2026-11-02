@@ -418,4 +418,40 @@ map_groups <- function(res_name, show_legend = TRUE){
 ### 7. Effect Size
 
 # load effect size estimates by context
-eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))
+eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))eff_dt <- eff_dt[, .(context_id, RR_median, RR_lower, RR_upper)]
+
+# Plot effect size (median and interval) against each covariate for group A
+# ("week 0 only") contexts. Groups come from Test 2, which is the test based on
+# effect_size_meta.csv.
+plot_effect_size <- function(res, subtitle){
+  ctx_dt <- res$data[group == group_labels[['A']]]
+  if (nrow(ctx_dt) == 0) return(NULL)
+
+  plot_dt <- melt(ctx_dt, id.vars = 'context_id', measure.vars = covar_info$var,
+                  variable.name = 'var', variable.factor = FALSE)
+  plot_dt <- merge(plot_dt, covar_info[, .(var, label)], by = 'var')
+  plot_dt <- merge(plot_dt, eff_dt, by = 'context_id')
+  plot_dt <- merge(plot_dt, context_info[, .(context_id, state_abbrev)], by = 'context_id')
+  # log scale for the most skewed variables (as in section 5)
+  plot_dt[var %in% c('population', 'cases_per_10k'), value := log(value)]
+  plot_dt[, label := factor(label, levels = covar_info$label)]
+
+  ggplot(plot_dt[!is.na(value) & is.finite(value)], aes(x = value, y = RR_median)) +
+    geom_hline(yintercept = 1, linetype = 'dashed', colour = 'grey50') +
+    geom_errorbar(aes(ymin = RR_lower, ymax = RR_upper), width = 0, colour = 'grey60') +
+    geom_point(colour = '#48A860', size = 2) +
+    geom_text(aes(label = state_abbrev), size = 2.5, vjust = -0.8) +
+    facet_wrap(~label, scales = 'free_x') +
+    scale_x_continuous(name = NULL) +
+    scale_y_continuous(name = 'Effect size (RR, median and interval)') +
+    theme_bw() +
+    ggtitle(paste0(subtitle, ': effect size vs. context characteristics'),
+            subtitle = paste0(group_labels[['A']], ' contexts (Test 2), n = ', nrow(ctx_dt),
+                              '\n(population and cases shown as log(x))'))
+}
+
+eff_plots <- list(
+  restaurant = plot_effect_size(results$`Test 2 first restaurant`, 'First Restaurant Mandate'),
+  bar        = plot_effect_size(results$`Test 2 first bar`,        'First Bar Mandate')
+)
+for (p in Filter(Negate(is.null), eff_plots)) print(p)
