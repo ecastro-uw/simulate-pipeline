@@ -373,7 +373,7 @@ states_sf <- states_sf[states_sf$ADM0_NAME == "United States" &
 # Shared categories and colors (same for every map, so one legend covers all)
 map_levels <- c("YYGYY", "YYYYY (low var)", "YYYYY (high var)", "Other",
                 "Excluded (< 10 counties)", "No mandate / unassigned")
-map_colors <- setNames(c("#48A860", "#FDD03B", "#FF7F00", "#9AA5B1", "grey75", "grey92"), map_levels)
+map_colors <- setNames(c("#48A860", "#FDD03B", "#FF7F00", "#4682b4", "grey75", "grey92"), map_levels)
 letter_to_cat <- c(A = "YYGYY", B = "YYYYY (low var)", C = "YYYYY (high var)", D = "Other")
 
 # Full lookup table (before the min_counties filter), to flag states excluded for size
@@ -410,8 +410,7 @@ map_groups <- function(res_name, show_legend = TRUE){
 # Side-by-side maps with a single shared legend (drop = FALSE keeps every category in it)
 (map_groups("Test 2 first restaurant") + map_groups("Test 2 first bar", show_legend = FALSE)) +
   plot_layout(guides = "collect") +
-  plot_annotation(title = "Test 2: result group by state",
-                  caption = "No mandate / unassigned: state had no such mandate, or its group could not be assigned (missing results).") &
+  plot_annotation(title = "Test 2: result group by state") +
   theme(legend.position = "bottom")
 
 
