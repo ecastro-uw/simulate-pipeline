@@ -456,3 +456,11 @@ eff_plots <- list(
 )
 for (p in Filter(Negate(is.null), eff_plots)) print(p)
 
+
+### 8. Mandate Onset
+mandate_root <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/'
+dining_dt <- fread(file.path(mandate_root,'first_restaurant_close.csv'))
+bar_dt <- fread(file.path(mandate_root,'first_bar_close.csv'))
+mandate_dt <- fread(file.path(mandate_root,'other_mandate_time_series.csv'))
+
+
