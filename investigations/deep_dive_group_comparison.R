@@ -463,4 +463,99 @@ dining_dt <- fread(file.path(mandate_root,'first_restaurant_close.csv'))
 bar_dt <- fread(file.path(mandate_root,'first_bar_close.csv'))
 mandate_dt <- fread(file.path(mandate_root,'other_mandate_time_series.csv'))
 
+# Compare the timing of mandate onset across the four Test 2 result groups, for
+# first mandates only: first restaurant closure (dining_dt) for the restaurant
+# contexts and first bar closure (bar_dt) for the bar contexts.
+#
+# Onset dates are county-level, so each context is summarised by the median onset
+# date across its counties (as listed in the locs_by_context file). The earliest
+# and latest county onset dates are kept to show the spread within each context.
 
+onset_types  <- c('restaurant', 'bar')
+onset_labels <- c(restaurant = 'First restaurant closure', bar = 'First bar closure')
+
+# County-level onset dates for the Test 2 contexts with an assigned group
+onset_cty <- merge(test2_dt[!is.na(group) & mandate_num == 'first', .(context_id, mandate_type, group)],
+                   county_map[mandate_num == 'first', .(context_id, location_id)], by = 'context_id')
+first_onset <- rbind(dining_dt[, .(location_id, onset_date, mandate_type = 'restaurant')],
+                     bar_dt[,    .(location_id, onset_date, mandate_type = 'bar')])
+onset_cty <- merge(onset_cty, first_onset, by = c('location_id', 'mandate_type'), all.x = TRUE)
+n_missing <- onset_cty[is.na(onset_date), .N]
+if (n_missing > 0) message(n_missing, ' county(ies) in the Test 2 first-mandate contexts have no onset date')
+onset_cty[, onset_num := as.numeric(as.Date(onset_date))]
+
+# Context-level summary (dates held as numbers for the tests, converted back for display)
+num_to_date <- function(x) as.Date(round(x), origin = '1970-01-01')
+onset_ctx <- onset_cty[!is.na(onset_num), .(n_counties   = .N,
+                                             onset_median = median(onset_num),
+                                             onset_min    = min(onset_num),
+                                             onset_max    = max(onset_num)),
+                       by = .(context_id, mandate_type, group)]
+onset_ctx[, onset_spread_days := onset_max - onset_min]
+onset_ctx <- merge(onset_ctx, context_info[, .(context_id, state_abbrev)], by = 'context_id')
+
+# Group-level description of context median onset dates
+onset_summary <- onset_ctx[, .(n_contexts   = .N,
+                               median_onset = num_to_date(median(onset_median)),
+                               q25_onset    = num_to_date(quantile(onset_median, 0.25)),
+                               q75_onset    = num_to_date(quantile(onset_median, 0.75)),
+                               earliest     = num_to_date(min(onset_median)),
+                               latest       = num_to_date(max(onset_median)),
+                               median_within_ctx_spread_days = median(onset_spread_days)),
+                           by = .(mandate_type, group)]
+onset_summary[, mandate_type := factor(mandate_type, levels = onset_types)]
+setorder(onset_summary, mandate_type, group)
+print(onset_summary)
+
+# Tests: Kruskal-Wallis across groups (groups with >= 2 contexts), followed by
+# Holm-adjusted pairwise Wilcoxon tests when KW p < alpha (as in section 4)
+onset_tests    <- list()
+onset_pairwise <- list()
+for (m_type in onset_types) {
+  sub <- onset_ctx[mandate_type == m_type]
+  keep <- sub[, .N, by = group][N >= 2, group]
+  sub <- sub[group %in% keep]
+  sub[, group := droplevels(group)]
+
+  kw_p <- NA_real_
+  if (uniqueN(sub$group) >= 2) {
+    kw_p <- kruskal.test(sub$onset_median, sub$group)$p.value
+    if (!is.na(kw_p) && kw_p < alpha) {
+      pw <- pairwise.wilcox.test(sub$onset_median, sub$group, p.adjust.method = 'holm', exact = FALSE)$p.value
+      pw <- as.data.table(as.table(pw))[!is.na(N)]
+      setnames(pw, c('group_1', 'group_2', 'p_holm'))
+      onset_pairwise[[m_type]] <- cbind(mandate_type = m_type, pw)
+    }
+  }
+  onset_tests[[m_type]] <- data.table(mandate_type = m_type, n_contexts = nrow(sub),
+                                      n_groups = uniqueN(sub$group), kruskal_p = kw_p)
+}
+onset_tests    <- rbindlist(onset_tests)
+onset_pairwise <- rbindlist(onset_pairwise)
+print(onset_tests)
+if (nrow(onset_pairwise) > 0) print(onset_pairwise)
+
+# Plot: one point per context (state abbreviation) at its median county onset date,
+# with a bar spanning its earliest to latest county onset date; boxplots summarise
+# the distribution of context medians within each group
+plot_onset <- copy(onset_ctx)
+date_cols <- c('onset_median', 'onset_min', 'onset_max')
+plot_onset[, (date_cols) := lapply(.SD, num_to_date), .SDcols = date_cols]
+facet_labs <- onset_tests[, setNames(paste0(onset_labels[mandate_type], ' (KW p = ', signif(kruskal_p, 2), ')'),
+                                     mandate_type)]
+plot_onset[, facet := factor(facet_labs[mandate_type], levels = facet_labs[onset_types])]
+
+onset_jitter <- position_jitter(width = 0.2, height = 0, seed = 1)
+onset_plot <- ggplot(plot_onset, aes(x = group, y = onset_median)) +
+  geom_boxplot(outlier.shape = NA, colour = 'grey65') +
+  geom_linerange(aes(ymin = onset_min, ymax = onset_max), colour = 'grey40', alpha = 0.5,
+                 position = onset_jitter) +
+  geom_text(aes(label = state_abbrev), size = 2.5, alpha = 0.8, position = onset_jitter) +
+  facet_wrap(~facet, scales = 'free_y') +
+  scale_x_discrete(name = NULL, labels = function(x) substr(x, 1, 1)) +
+  scale_y_date(name = 'Onset date (median across counties)', date_labels = '%b %d') +
+  theme_bw() +
+  ggtitle('Test 2, first closures: mandate onset date by result group',
+          subtitle = paste(paste(group_labels, collapse = '; '),
+                           '\n(bars span the earliest to latest county onset within each context)'))
+print(onset_plot)
