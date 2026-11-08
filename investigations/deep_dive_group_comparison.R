@@ -535,27 +535,49 @@ onset_pairwise <- rbindlist(onset_pairwise)
 print(onset_tests)
 if (nrow(onset_pairwise) > 0) print(onset_pairwise)
 
-# Plot: one point per context (state abbreviation) at its median county onset date,
-# with a bar spanning its earliest to latest county onset date; boxplots summarise
-# the distribution of context medians within each group
+# Figure 1: one point per context (state abbreviation) at its median county onset
+# date; boxplots summarise the distribution of context medians within each group
 plot_onset <- copy(onset_ctx)
-date_cols <- c('onset_median', 'onset_min', 'onset_max')
-plot_onset[, (date_cols) := lapply(.SD, num_to_date), .SDcols = date_cols]
+plot_onset[, onset_median := num_to_date(onset_median)]
 facet_labs <- onset_tests[, setNames(paste0(onset_labels[mandate_type], ' (KW p = ', signif(kruskal_p, 2), ')'),
                                      mandate_type)]
 plot_onset[, facet := factor(facet_labs[mandate_type], levels = facet_labs[onset_types])]
 
-onset_jitter <- position_jitter(width = 0.2, height = 0, seed = 1)
 onset_plot <- ggplot(plot_onset, aes(x = group, y = onset_median)) +
   geom_boxplot(outlier.shape = NA, colour = 'grey65') +
-  geom_linerange(aes(ymin = onset_min, ymax = onset_max), colour = 'grey40', alpha = 0.5,
-                 position = onset_jitter) +
-  geom_text(aes(label = state_abbrev), size = 2.5, alpha = 0.8, position = onset_jitter) +
+  geom_text(aes(label = state_abbrev), size = 2.5, alpha = 0.8,
+            position = position_jitter(width = 0.2, height = 0, seed = 1)) +
   facet_wrap(~facet, scales = 'free_y') +
   scale_x_discrete(name = NULL, labels = function(x) substr(x, 1, 1)) +
   scale_y_date(name = 'Onset date (median across counties)', date_labels = '%b %d') +
   theme_bw() +
   ggtitle('Test 2, first closures: mandate onset date by result group',
-          subtitle = paste(paste(group_labels, collapse = '; '),
-                           '\n(bars span the earliest to latest county onset within each context)'))
+          subtitle = paste(group_labels, collapse = '; '))
 print(onset_plot)
+
+# Figure 2: within-state variation in onset date. One row per context, ordered by
+# its median onset date; circle size is the share of the context's counties with
+# that onset date, the black tick marks the median, and colour shows the result group
+var_cty <- merge(onset_cty[!is.na(onset_num), .(context_id, mandate_type, group, onset_num)],
+                 onset_ctx[, .(context_id, state_abbrev, onset_median, onset_spread_days)], by = 'context_id')
+# order rows within each mandate type by median onset (the key keeps the two panels separate)
+var_cty[, row_key := paste(state_abbrev, mandate_type, sep = '__')]
+row_order <- unique(var_cty[order(mandate_type, -onset_median, state_abbrev), row_key])
+var_cty[, row_key := factor(row_key, levels = row_order)]
+var_cty[, facet := factor(onset_labels[mandate_type], levels = onset_labels[onset_types])]
+var_cty[, `:=`(onset_date = num_to_date(onset_num), onset_median = num_to_date(onset_median))]
+var_med <- unique(var_cty[, .(row_key, facet, onset_median)])
+
+onset_var_plot <- ggplot(var_cty, aes(x = onset_date, y = row_key)) +
+  geom_count(aes(size = after_stat(prop), colour = group, group = row_key), alpha = 0.6) +
+  geom_point(data = var_med, aes(x = onset_median), shape = '|', size = 4, colour = 'black') +
+  facet_wrap(~facet, scales = 'free') +
+  scale_y_discrete(name = NULL, labels = function(x) sub('__.*', '', x)) +
+  scale_x_date(name = 'County onset date', date_labels = '%b %d') +
+  scale_size_area(name = 'Share of counties', max_size = 5) +
+  scale_colour_brewer(name = 'Result group', palette = 'Dark2', drop = FALSE) +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 6)) +
+  ggtitle('Test 2, first closures: within-state variation in mandate onset date',
+          subtitle = 'One row per state, ordered by median onset; | = median county onset date')
+print(onset_var_plot)
