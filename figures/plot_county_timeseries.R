@@ -74,14 +74,14 @@ sens_dropped <- rbindlist(lapply(names(sens_drop_paths), function(nm) {
   fread(sens_drop_paths[[nm]])[, .(location_id, event, reason, analysis = nm)]
 }))
 
-# Mandate timing (first files have onset_date & lift; second files also have prev_lift)
+# Mandate timing (first files have onset_date; second files also have prev_lift)
 onset_list <- list()
 for (m_num in c('first', 'second')) {
   for (m_type in c('restaurant', 'bar')) {
     dt <- fread(paste0(covar_dir, m_num, '_', m_type, '_close.csv'))
-    for (col in intersect(c('onset_date', 'lift', 'prev_lift'), names(dt))) set(dt, j = col, value = as.Date(dt[[col]]))
+    for (col in intersect(c('onset_date', 'prev_lift'), names(dt))) set(dt, j = col, value = as.Date(dt[[col]]))
     if (!'prev_lift' %in% names(dt)) dt[, prev_lift := as.Date(NA)]
-    onset_list[[paste(m_num, m_type, sep = '_')]] <- dt[, .(location_id, onset_date, lift, prev_lift)]
+    onset_list[[paste(m_num, m_type, sep = '_')]] <- dt[, .(location_id, onset_date, prev_lift)]
   }
 }
 
