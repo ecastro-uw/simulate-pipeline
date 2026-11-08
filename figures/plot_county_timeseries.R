@@ -233,8 +233,8 @@ facet_page <- function(dt, events, shade, status, y_col, y_lab, free_y, free_x, 
     geom_point(size = 0.9, na.rm = TRUE) +
     facet_wrap(~panel, ncol = n_col, scales = facet_scales) +
     scale_colour_manual(values = status_colours, name = NULL, drop = FALSE) +
-    scale_linetype_manual(values = c('Mandate onset' = 'dashed', 'Previous mandate lifted' = 'dotted',
-                                     'Mandate lifted' = 'dotdash'), name = NULL) +
+    scale_linetype_manual(values = c('Mandate onset' = 'dashed', 'Previous mandate lifted' = 'dotted'),
+                          name = NULL) +
     scale_x_date(name = NULL, date_labels = '%b %d', breaks = breaks_pretty(n = 4)) +
     scale_y_continuous(name = y_lab, labels = if (y_col == 'v') label_comma() else waiver()) +
     labs(title = title, subtitle = subtitle, caption = caption) +
@@ -375,12 +375,11 @@ plot_county_timeseries <- function(state, mandate_type = c('restaurant', 'bar'),
   ord[, panel := factor(panel, levels = unique(panel))]
   dt <- merge(dt, ord[, .(location_id, panel)], by = 'location_id')
 
-  # mandate events per county (onset, plus previous lift / lift when they fall in the window)
+  # mandate events per county (onset, plus the previous mandate's lift when it falls in the window)
   win <- dt[, .(x_min = min(week_mid) - 3, x_max = max(week_mid) + 3), by = .(location_id, panel)]
   ev <- merge(onset_list[[paste(mandate_num, mandate_type, sep = '_')]], win, by = 'location_id')
   events <- rbind(ev[, .(panel, date = onset_date, event = 'Mandate onset')],
-                  ev[!is.na(prev_lift) & prev_lift >= x_min, .(panel, date = prev_lift, event = 'Previous mandate lifted')],
-                  ev[!is.na(lift) & lift <= x_max, .(panel, date = lift, event = 'Mandate lifted')])
+                  ev[!is.na(prev_lift) & prev_lift >= x_min, .(panel, date = prev_lift, event = 'Previous mandate lifted')])
 
   n_counties <- uniqueN(dt$location_id)
   onsets_spread <- as.numeric(diff(range(ord$onset_date))) > 21
