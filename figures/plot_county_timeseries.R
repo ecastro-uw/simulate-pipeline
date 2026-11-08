@@ -88,6 +88,7 @@ for (m_num in c('first', 'second')) {
 # Daily SafeGraph visits (restaurants and bars only)
 sg_dt <- fread(paste0(covar_dir, 'processed_safegraph_data.csv'),
                select = c('location_id', 'date', 'top_category', 'visit_count'))
+sg_dt <- sg_dt[location_id %in% locs_dt$location_id]   # US counties only (level 3 of the hierarchy)
 sg_dt[, category := fifelse(top_category %like% 'Restaurants', 'restaurant',
                             fifelse(top_category %like% 'Drinking', 'bar', NA_character_))]
 sg_dt <- sg_dt[!is.na(category), .(location_id, date = as.Date(date), category, v = visit_count)]
