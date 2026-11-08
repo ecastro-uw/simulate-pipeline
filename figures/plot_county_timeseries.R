@@ -11,8 +11,9 @@ version_id <- '20261013.02'
 root_dir  <- '/ihme/scratch/users/ems2285/thesis/outputs/outputs/'
 covar_dir <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/'
 config_dir  <- '/ihme/homes/ems2285/repos/simulate-pipeline/config_files/'
-lookup_path <- paste0(config_dir, 'context_lookup_inv2_intersect_v3.csv')   # which contexts to analyze
+lookup_path <- paste0(config_dir, 'context_lookup_inv2_intersect_v3.csv')    # which contexts to analyze
 locs_path   <- paste0(config_dir, 'locs_by_context_inv2_intersect_v3.csv')   # which counties are in each context
+drop_path   <- paste0(config_dir, 'dropped_locations_inv2_v3.csv') # which counties are not included in the context and why
 
 # location hierarchy info
 hierarchy <- get_location_metadata(location_set_id = 128, release_id = 9)
@@ -24,6 +25,7 @@ locs_dt <- merge(counties_dt, states_dt, by='parent_id')
 #### Load data
 # Context definitions
 context_info <- fread(lookup_path)[, .(context_id, mandate_num, mandate_type, state_abbrev, N)]
+dropped_locs <- fread(drop_path)
 
 # Observations
 obs_dt <- fread(paste0(root_dir, version_id, '/batched_output/obs_context_', context, '.csv'))[
