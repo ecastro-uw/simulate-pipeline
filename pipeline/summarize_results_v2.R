@@ -159,19 +159,53 @@ effect_size_dt <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
-### (B) Meta Analysis
+### (B) Meta Analysis (population weighted)
+# Each location contributes its posterior draws of RR to a pooled context-level distribution.
+# Draws are weighted by the location's share of the context's total population, so larger
+# counties have proportionally more influence on the point estimate and 95% interval.
+
+# Load county populations (output of data_processing/prep_population.R)
+pop_path <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/population.csv'
+pop_dt <- unique(fread(pop_path)[, .(location_id, pop)], by='location_id')
+
+# Weighted quantile: sort values, accumulate normalized weights, and take the first
+# value whose cumulative weight reaches each requested probability
+weighted_quantile <- function(x, w, probs){
+  ord <- order(x)
+  x <- x[ord]
+  cw <- cumsum(w[ord]) / sum(w)
+  sapply(probs, function(p) x[which(cw >= p)[1]])
+}
+
 calc_eff_size_meta <- function(context){
   
-  # load thetas
+  # load thetas (one row per location, one column per draw)
   thetas <- fread(paste0(root_dir,'/batched_output/thetas_context_',context,'.csv'))
   draw_cols <- grep("^draw_", names(thetas), value = TRUE)
-  # exponentiate to yield Relative Risks and combine into one long vector
-  all_draws <- exp(unlist(thetas[, ..draw_cols])) #vector of RRs: N locs x 1000 draws per loc
   
-  point_est <- median(all_draws)
-  ci_95 <- quantile(all_draws, c(0.025, 0.975))
+  # attach population to each location
+  thetas <- merge(thetas, pop_dt, by='location_id', all.x=TRUE)
+  missing_pop <- thetas[is.na(pop), location_id]
+  if (length(missing_pop) > 0){
+    warning(paste0('Context ', context, ': dropping ', length(missing_pop),
+                   ' location(s) with no population data: ', paste(missing_pop, collapse=', ')))
+    thetas <- thetas[!is.na(pop)]
+  }
+  
+  # exponentiate to yield Relative Risks and combine into one long vector
+  # (unlist is column-major, so draws are ordered draw_1 for all locs, draw_2 for all locs, ...)
+  all_draws <- exp(unlist(thetas[, ..draw_cols], use.names = FALSE)) #vector of RRs: N locs x 1000 draws per loc
+  # matching weights: each draw of location i gets weight pop_i (every loc has the same number of draws)
+  all_weights <- rep(thetas$pop, times = length(draw_cols))
+  
+  # population-weighted median and 95% interval
+  wq <- weighted_quantile(all_draws, all_weights, c(0.5, 0.025, 0.975))
+  point_est <- wq[1]
+  ci_95 <- wq[2:3]
   
   temp_dt <- data.table(context_id = context,
+                        N_locs_weighted = nrow(thetas),
+                        total_pop = sum(thetas$pop),
                         RR_median = round(point_est,2),
                         RR_lower = ci_95[1],
                         RR_upper = ci_95[2],
