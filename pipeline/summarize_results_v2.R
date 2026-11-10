@@ -160,22 +160,16 @@ fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
 ### (B) Meta Analysis (population weighted)
-# Each location contributes its posterior draws of RR to a pooled context-level distribution.
-# Draws are weighted by the location's share of the context's total population, so larger
-# counties have proportionally more influence on the point estimate and 95% interval.
+# For each draw, compute the population-weighted average of theta (log RR) across the
+# locations in the context. This yields one draw of the context-level average effect per
+# draw index; the median and 2.5/97.5 percentiles across draws give the point estimate and
+# 95% interval. Averaging in log space then exponentiating gives a population-weighted
+# geometric mean RR. Draw indices are kept aligned across locations, so any correlation
+# between locations' draws carries through to the uncertainty of the average.
 
 # Load county populations (output of data_processing/prep_population.R)
 pop_path <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/population.csv'
 pop_dt <- unique(fread(pop_path)[, .(location_id, pop)], by='location_id')
-
-# Weighted quantile: sort values, accumulate normalized weights, and take the first
-# value whose cumulative weight reaches each requested probability
-weighted_quantile <- function(x, w, probs){
-  ord <- order(x)
-  x <- x[ord]
-  cw <- cumsum(w[ord]) / sum(w)
-  sapply(probs, function(p) x[which(cw >= p)[1]])
-}
 
 calc_eff_size_meta <- function(context){
   
@@ -192,20 +186,20 @@ calc_eff_size_meta <- function(context){
     thetas <- thetas[!is.na(pop)]
   }
   
-  # exponentiate to yield Relative Risks and combine into one long vector
-  # (unlist is column-major, so draws are ordered draw_1 for all locs, draw_2 for all locs, ...)
-  all_draws <- exp(unlist(thetas[, ..draw_cols], use.names = FALSE)) #vector of RRs: N locs x 1000 draws per loc
-  # matching weights: each draw of location i gets weight pop_i (every loc has the same number of draws)
-  all_weights <- rep(thetas$pop, times = length(draw_cols))
+  # population weights (sum to 1 within the context)
+  w <- thetas$pop / sum(thetas$pop)
   
-  # population-weighted median and 95% interval
-  wq <- weighted_quantile(all_draws, all_weights, c(0.5, 0.025, 0.975))
-  point_est <- wq[1]
-  ci_95 <- wq[2:3]
+  # population-weighted mean of theta for each draw, then exponentiate to RR
+  theta_mat <- as.matrix(thetas[, ..draw_cols]) # N locs x 1000 draws
+  avg_draws <- exp(colSums(theta_mat * w))      # 1000 draws of the context-level RR
+  
+  point_est <- median(avg_draws)
+  ci_95 <- quantile(avg_draws, c(0.025, 0.975))
   
   temp_dt <- data.table(context_id = context,
                         N_locs_weighted = nrow(thetas),
                         total_pop = sum(thetas$pop),
+                        eff_N = round(1 / sum(w^2), 1), # effective number of locations under pop weighting
                         RR_median = round(point_est,2),
                         RR_lower = ci_95[1],
                         RR_upper = ci_95[2],
