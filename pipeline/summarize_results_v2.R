@@ -17,6 +17,7 @@ library(RColorBrewer)
 library(colorspace)
 library(dplyr)
 library(tools)
+library(metafor)
 source("/ihme/cc_resources/libraries/current/r/get_location_metadata.R")
 
 # args
@@ -159,22 +160,30 @@ effect_size_dt <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_
 fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 
 
-### (B) Meta Analysis (population weighted)
-# Each location contributes its posterior draws of RR to a pooled context-level distribution.
-# Draws are weighted by the location's share of the context's total population, so larger
-# counties have proportionally more influence on the point estimate and 95% interval.
+### (B) Meta Analysis
+# Within each context, each county is treated as a "study". theta = y - y_hat is a log RR,
+# where y = log((weekly visits + 0.5) / mean weekly baseline visits); RR = exp(theta).
+# For each county: yi = mean of its theta draws, vi = variance of its theta draws.
+# Pooling is done on the log scale and results are exponentiated to RRs:
+#   (a) Inverse-variance (fixed/equal effect): weights 1/vi
+#   (b) Random effects (REML; DerSimonian-Laird fallback if REML fails): weights 1/(vi + tau^2)
+# Population is not used in the weights; it is reported, and used in a diagnostic that checks
+# whether smaller counties have wider uncertainty (cor_logpop_sd < 0 is expected).
+# Contexts with fewer than min_counties counties are not estimated.
+
+min_counties <- 10
 
 # Load county populations (output of data_processing/prep_population.R)
 pop_path <- '/ihme/scratch/users/ems2285/thesis/aim_3/processed_data/USA_counties/population.csv'
 pop_dt <- unique(fread(pop_path)[, .(location_id, pop)], by='location_id')
 
-# Weighted quantile: sort values, accumulate normalized weights, and take the first
-# value whose cumulative weight reaches each requested probability
-weighted_quantile <- function(x, w, probs){
-  ord <- order(x)
-  x <- x[ord]
-  cw <- cumsum(w[ord]) / sum(w)
-  sapply(probs, function(p) x[which(cw >= p)[1]])
+# classify direction of effect from a CI on the RR scale
+get_direction <- function(lower, upper){
+  ifelse(is.na(lower) | is.na(upper), NA_character_,
+         ifelse(upper < 1, 'decrease', ifelse(lower > 1, 'increase', 'indeterminate')))
+}
+fmt_ci <- function(lower, upper){
+  ifelse(is.na(lower), NA_character_, paste0('(',round(lower,2),', ', round(upper,2),')'))
 }
 
 calc_eff_size_meta <- function(context){
@@ -192,31 +201,89 @@ calc_eff_size_meta <- function(context){
     thetas <- thetas[!is.na(pop)]
   }
   
-  # exponentiate to yield Relative Risks and combine into one long vector
-  # (unlist is column-major, so draws are ordered draw_1 for all locs, draw_2 for all locs, ...)
-  all_draws <- exp(unlist(thetas[, ..draw_cols], use.names = FALSE)) #vector of RRs: N locs x 1000 draws per loc
-  # matching weights: each draw of location i gets weight pop_i (every loc has the same number of draws)
-  all_weights <- rep(thetas$pop, times = length(draw_cols))
+  # per-county effect size (log RR) and within-county variance from the draws
+  theta_mat <- as.matrix(thetas[, ..draw_cols])
+  county_dt <- data.table(context_id  = context,
+                          location_id = thetas$location_id,
+                          pop         = thetas$pop,
+                          yi          = rowMeans(theta_mat, na.rm = TRUE),
+                          vi          = apply(theta_mat, 1, var, na.rm = TRUE))
+  county_dt[, sdi := sqrt(vi)]
+  k <- nrow(county_dt)
   
-  # population-weighted median and 95% interval
-  wq <- weighted_quantile(all_draws, all_weights, c(0.5, 0.025, 0.975))
-  point_est <- wq[1]
-  ci_95 <- wq[2:3]
+  # diagnostic: do smaller counties have wider uncertainty? (expect negative)
+  cor_logpop_sd <- if (k >= 3) cor(log(county_dt$pop), county_dt$sdi, method = 'spearman') else NA_real_
   
+  # template row (all estimates NA)
   temp_dt <- data.table(context_id = context,
-                        N_locs_weighted = nrow(thetas),
-                        total_pop = sum(thetas$pop),
-                        RR_median = round(point_est,2),
-                        RR_lower = ci_95[1],
-                        RR_upper = ci_95[2],
-                        CI_RR = paste0('(',round(ci_95[1],2),', ', round(ci_95[2],2),')'),
-                        direction = ifelse(ci_95[2] < 1, 'decrease', ifelse(ci_95[1] > 1, 'increase', 'indeterminate'))
-  )
-  return(temp_dt)
+                        N_locs = k,
+                        total_pop = sum(county_dt$pop),
+                        cor_logpop_sd = round(cor_logpop_sd, 2),
+                        RR_IV = NA_real_, RR_IV_lower = NA_real_, RR_IV_upper = NA_real_,
+                        CI_RR_IV = NA_character_, direction_IV = NA_character_,
+                        RR_RE = NA_real_, RR_RE_lower = NA_real_, RR_RE_upper = NA_real_,
+                        CI_RR_RE = NA_character_, direction_RE = NA_character_,
+                        PI_RE_lower = NA_real_, PI_RE_upper = NA_real_,
+                        tau2 = NA_real_, I2 = NA_real_, Q_pval = NA_real_,
+                        re_method = NA_character_, note = NA_character_)
+  
+  # do not estimate for small contexts
+  if (k < min_counties){
+    warning(paste0('Context ', context, ': only ', k, ' counties (< ', min_counties, '); not estimated.'))
+    temp_dt[, note := paste('fewer than', min_counties, 'counties')]
+    return(list(summary = temp_dt, county = county_dt))
+  }
+  
+  # (a) inverse-variance (equal/fixed effect)
+  fit_iv <- rma(yi = yi, vi = vi, data = county_dt, method = 'EE')
+  temp_dt[, `:=`(RR_IV       = round(exp(as.numeric(fit_iv$beta)), 3),
+                 RR_IV_lower = exp(fit_iv$ci.lb),
+                 RR_IV_upper = exp(fit_iv$ci.ub))]
+  
+  # (b) random effects: REML, falling back to DerSimonian-Laird if REML fails to converge
+  re_method <- 'REML'
+  fit_re <- tryCatch(rma(yi = yi, vi = vi, data = county_dt, method = 'REML'),
+                     error = function(e) NULL)
+  if (is.null(fit_re)){
+    warning(paste0('Context ', context, ': REML did not converge; using DerSimonian-Laird.'))
+    re_method <- 'DL'
+    fit_re <- rma(yi = yi, vi = vi, data = county_dt, method = 'DL')
+  }
+  pred_re <- predict(fit_re, transf = exp) # pooled RR, CI, and 95% prediction interval
+  temp_dt[, `:=`(RR_RE       = round(pred_re$pred, 3),
+                 RR_RE_lower = pred_re$ci.lb,
+                 RR_RE_upper = pred_re$ci.ub,
+                 PI_RE_lower = pred_re$pi.lb,
+                 PI_RE_upper = pred_re$pi.ub,
+                 tau2        = fit_re$tau2,
+                 I2          = round(fit_re$I2, 1),
+                 Q_pval      = fit_re$QEp,
+                 re_method   = re_method)]
+  
+  temp_dt[, `:=`(CI_RR_IV     = fmt_ci(RR_IV_lower, RR_IV_upper),
+                 direction_IV = get_direction(RR_IV_lower, RR_IV_upper),
+                 CI_RR_RE     = fmt_ci(RR_RE_lower, RR_RE_upper),
+                 direction_RE = get_direction(RR_RE_lower, RR_RE_upper))]
+  
+  return(list(summary = temp_dt, county = county_dt))
 }
-effect_size_dt2 <- rbindlist(lapply(context_list, calc_eff_size_meta))
+meta_results <- lapply(context_list, calc_eff_size_meta)
+effect_size_dt2 <- rbindlist(lapply(meta_results, `[[`, 'summary'))
+county_var_dt   <- rbindlist(lapply(meta_results, `[[`, 'county'))
 effect_size_dt2 <- merge(context_lookup[,.SD, .SDcols = c('context_id', 'mandate_num', 'mandate_type', context_dims, 'N')],
                          effect_size_dt2, by='context_id')
+
+# Diagnostic outputs: per-county within-county uncertainty vs population
+fwrite(county_var_dt, paste0(root_dir,'/county_theta_variance.csv'))
+p_sd <- ggplot(county_var_dt, aes(x = pop, y = sdi)) +
+  geom_point(alpha = 0.3, size = 0.8) +
+  geom_smooth(method = 'loess', se = TRUE, color = 'blue') +
+  scale_x_log10(name = 'County population (log scale)', labels = scales::comma) +
+  scale_y_continuous(name = 'SD of theta draws (log RR)') +
+  ggtitle('Within-county uncertainty vs. population') +
+  theme_bw()
+ggsave(paste0(root_dir,'/theta_sd_vs_pop.pdf'), p_sd, width = 7, height = 5)
+
 # Save table
 fwrite(effect_size_dt2, paste0(root_dir,'/effect_size_meta.csv'))
 
