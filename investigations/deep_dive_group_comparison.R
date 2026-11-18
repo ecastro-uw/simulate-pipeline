@@ -4,8 +4,8 @@
 #     sensitivity weeks (-2, -1, 0, 1, 2) into one wide table
 # (2) Categorize every context into one of four groups:
 #       A: only t0 = 1, all other weeks = 0
-#       B: all weeks = 0 and observed mobility has LOW variability
-#       C: all weeks = 0 and observed mobility has HIGH variability
+#       B: all weeks = 0 and the data were flat (the test could have detected a 20% decrease)
+#       C: all weeks = 0 and the data were noisy (the test could not have detected a 20% decrease)
 #       D: other
 # (3) Test whether the four groups differ with respect to:
 #       (a) political leaning      - % voted Republican (2020 presidential)
@@ -121,60 +121,136 @@ context_counties <- context_counties[context_id %in% all_contexts]
 
 ### 2. CATEGORIZE CONTEXTS
 
-## 2(a) Variability of the observed mobility data
-# For each county, variability = SD of the week-to-week change in y (log normalized
-# visits) over the pre-mandate weeks (time_id < 0). Differencing removes the
-# pre-mandate trend so that only the noise is captured. The context-level value is
-# the median across the context's counties (as listed in the locs_by_context file).
-calc_obs_variability <- function(context){
-  ctx_locs <- context_counties[context_id == context, location_id]
-  obs_dt <- fread(paste0(root_dir, week0_vers, '/batched_output/obs_context_', context, '.csv'))[
-    time_id < 0 & !is.na(y) & location_id %in% ctx_locs, .(location_id, time_id, y)]
-  n_missing <- length(setdiff(ctx_locs, obs_dt$location_id))
-  if (n_missing > 0) message('Context ', context, ': ', n_missing, ' county(ies) have no observed mobility data')
-  setorder(obs_dt, location_id, time_id)
-  county_var <- obs_dt[, .(sd_diff = sd(diff(y))), by = location_id]
-  data.table(context_id = context, obs_var = median(county_var$sd_diff, na.rm = TRUE))
+## 2(a) Precision of each test (flat vs. noisy)
+# Among contexts with no significant decrease in any week, separate those where the
+# data were flat (the test was precise enough to detect a meaningful drop, and none
+# occurred) from those where the data were too noisy for the test to detect one.
+#
+# For each context we ask: what is the smallest uniform decrease in visits, relative
+# to the model's median prediction at t = 0, that the test would have declared
+# significant? This is computed from the theta draws (theta = observed y - predicted
+# draw, log scale; thetas_context_[id].csv, week 0 version) by shifting every county's
+# observed value to (median prediction + log(1 - D)) and re-applying each test's rule:
+#   Test 1: a county is significant when Pr(theta >= 0) < 0.05, i.e. when
+#           q95(theta) - q50(theta) < -log(1 - D). The context is significant when the
+#           binomial p-value for the number of significant counties is < 0.05 (computed
+#           and rounded as in summarize_results.R), so its detectable decrease is that of
+#           the k_crit-th most precise county, where k_crit is the number of significant
+#           counties the binomial test needs.
+#   Test 2: the pooled RR (theta draws pooled across counties, as in
+#           summarize_results.R) indicates a decrease when q97.5 < 0, i.e. when
+#           q97.5(theta) - q50(theta) < -log(1 - D).
+# A context is 'flat' if its test could have detected a decrease of detect_cutoff
+# (default 20%) and 'noisy' otherwise.
+#
+# Flat contexts can also be ones where visits did fall but the model predicted the
+# fall (e.g. a steady pre-onset decline). These are flagged (anticipated_drop) when the
+# observed decrease at t = 0, relative to the mean of the pre-onset weeks (median
+# across counties), is at least detect_cutoff.
+detect_cutoff <- 0.20
+
+# Binomial rule from summarize_results.R: smallest number of significant counties
+# (out of n) for which round(binom_p, 2) < 0.05; NA if no number suffices
+calc_k_crit <- function(n){
+  k <- seq_len(n)
+  ok <- round(pbinom(k - 1, n, 0.05, lower.tail = FALSE), 2) < 0.05
+  if (any(ok)) min(k[ok]) else NA_integer_
 }
 
-obs_var_dt <- rbindlist(lapply(context_info$context_id, calc_obs_variability))
+calc_precision <- function(context){
+  ctx_locs <- context_counties[context_id == context, location_id]
 
-# Low/high split: median variability across all retained contexts, so that a given
-# context receives the same low/high label under both tests
-var_threshold <- median(obs_var_dt$obs_var, na.rm = TRUE)
-obs_var_dt[, var_cat := ifelse(obs_var <= var_threshold, 'low', 'high')]
-message('Mobility variability threshold (median SD of weekly change in y): ', round(var_threshold, 4))
+  # detectable decrease for each test, from the theta draws
+  thetas <- fread(paste0(root_dir, week0_vers, '/batched_output/thetas_context_', context, '.csv'))
+  thetas <- thetas[location_id %in% ctx_locs]
+  draw_cols <- grep('^draw_', names(thetas), value = TRUE)
+  theta_mat <- as.matrix(thetas[, ..draw_cols])
+  n_missing <- length(setdiff(ctx_locs, thetas$location_id))
+  if (n_missing > 0) message('Context ', context, ': ', n_missing, ' county(ies) have no theta draws')
+
+  # Test 1 (log scale, per county), then the k_crit-th smallest
+  county_L <- apply(theta_mat, 1, function(x) diff(quantile(x, c(0.5, 0.95), na.rm = TRUE)))
+  k_crit <- calc_k_crit(length(county_L))
+  L1 <- if (is.na(k_crit)) Inf else sort(county_L)[k_crit]
+  # Test 2 (log scale, pooled draws)
+  L2 <- diff(quantile(as.vector(theta_mat), c(0.5, 0.975), na.rm = TRUE))
+
+  # observed decrease at t = 0 relative to the pre-onset mean
+  obs_dt <- fread(paste0(root_dir, week0_vers, '/batched_output/obs_context_', context, '.csv'))[
+    !is.na(y) & location_id %in% ctx_locs, .(location_id, time_id, y)]
+  obs_chg <- obs_dt[, .(chg = y[time_id == 0][1] - mean(y[time_id < 0])), by = location_id]
+
+  data.table(context_id    = context,
+             n_test        = length(county_L),
+             detect_test1  = 1 - exp(-unname(L1)),   # smallest detectable decrease (proportion)
+             detect_test2  = 1 - exp(-unname(L2)),
+             obs_drop      = 1 - exp(median(obs_chg$chg, na.rm = TRUE)))
+}
+
+precision_dt <- rbindlist(lapply(context_info$context_id, calc_precision))
+precision_dt[, anticipated_drop := obs_drop >= detect_cutoff]
 
 ## 2(b) Assign groups
 group_labels <- c(A = 'A: week 0 only',
-                  B = 'B: all 0, low var',
-                  C = 'C: all 0, high var',
+                  B = 'B: all 0, flat',
+                  C = 'C: all 0, noisy',
                   D = 'D: other')
 
-assign_groups <- function(dt){
+assign_groups <- function(dt, detect_col){
   # take mandate type/number from the context lookup table
   dt <- merge(copy(dt)[, .SD, .SDcols = c('context_id', week_cols)],
               context_info[, .(context_id, mandate_num, mandate_type)], by = 'context_id')
-  dt <- merge(dt, obs_var_dt, by = 'context_id', all.x = TRUE)
+  dt <- merge(dt, precision_dt[, .(context_id, detect_drop = get(detect_col), obs_drop, anticipated_drop)],
+              by = 'context_id', all.x = TRUE)
   dt[, n_pos := rowSums(.SD), .SDcols = week_cols]
   dt[, group := fcase(
-    get(week0_col) == 1 & n_pos == 1,  'A',
-    n_pos == 0 & var_cat == 'low',     'B',
-    n_pos == 0 & var_cat == 'high',    'C',
-    n_pos > 0,                         'D'
+    get(week0_col) == 1 & n_pos == 1,             'A',
+    n_pos == 0 & detect_drop <= detect_cutoff,    'B',
+    n_pos == 0 & detect_drop >  detect_cutoff,    'C',
+    n_pos > 0,                                    'D'
   )]
-  # contexts missing a result for any week (or missing obs data, if all weeks = 0) are left unassigned
+  # the anticipated-drop flag only applies to flat contexts
+  dt[group != 'B' | is.na(group), anticipated_drop := NA]
+  # contexts missing a result for any week (or missing theta draws, if all weeks = 0) are left unassigned
   n_missing <- dt[is.na(group), .N]
   if (n_missing > 0) message(n_missing, ' context(s) could not be assigned a group (missing week results or obs data)')
   dt[, group := factor(group, levels = names(group_labels), labels = group_labels)]
   dt
 }
 
-test1_dt <- assign_groups(test1_dt)
-test2_dt <- assign_groups(test2_dt)
+test1_dt <- assign_groups(test1_dt, 'detect_test1')
+test2_dt <- assign_groups(test2_dt, 'detect_test2')
 
 print(dcast(test1_dt, mandate_num + mandate_type ~ group, fun.aggregate = length, value.var = 'context_id'))
 print(dcast(test2_dt, mandate_num + mandate_type ~ group, fun.aggregate = length, value.var = 'context_id'))
+message('Flat contexts where the model anticipated a decrease of >= ', detect_cutoff*100, '%: Test 1 = ',
+        test1_dt[anticipated_drop == TRUE, .N], ', Test 2 = ', test2_dt[anticipated_drop == TRUE, .N])
+
+# Figure: for contexts with no significant decrease in any week, the smallest decrease
+# the test could have detected vs. the decrease actually observed at t = 0
+plot_precision <- function(dt, test_name){
+  plot_dt <- merge(dt[group %in% group_labels[c('B', 'C')]],
+                   context_info[, .(context_id, state_abbrev)], by = 'context_id')
+  plot_dt[, category := factor(paste(mandate_num, mandate_type),
+                               levels = c('first restaurant', 'first bar', 'second restaurant', 'second bar'))]
+  # contexts that could not detect any decrease (too few counties for the binomial test) plot at 100%
+  plot_dt[, detect_plot := pmin(detect_drop, 1)]
+  ggplot(plot_dt, aes(x = detect_plot * 100, y = obs_drop * 100, colour = group)) +
+    geom_vline(xintercept = detect_cutoff * 100, linetype = 'dashed', colour = 'grey50') +
+    geom_hline(yintercept = detect_cutoff * 100, linetype = 'dotted', colour = 'grey50') +
+    geom_text(aes(label = state_abbrev), size = 2.8) +
+    facet_wrap(~category, drop = FALSE) +
+    scale_x_continuous(name = 'Smallest decrease the test could detect (%)') +
+    scale_y_continuous(name = 'Observed decrease at t = 0 vs. pre-onset mean (%)') +
+    scale_colour_manual(name = NULL, values = setNames(c('#C99700', '#D35400'), group_labels[c('B', 'C')])) +
+    theme_bw() +
+    theme(legend.position = 'bottom') +
+    ggtitle(paste0(test_name, ': contexts with no significant decrease in any week'),
+            subtitle = paste0('Dashed line = ', detect_cutoff*100, '% cutoff (left: flat, right: noisy). ',
+                              'Flat contexts above the dotted line had a decrease the model anticipated.'))
+}
+print(plot_precision(test1_dt, 'Test 1'))
+print(plot_precision(test2_dt, 'Test 2'))
 
 
 ### 3. CONTEXT-LEVEL COVARIATES
@@ -371,10 +447,10 @@ states_sf <- states_sf[states_sf$ADM0_NAME == "United States" &
                        !(states_sf$ADM1_NAME %in% c("Alaska", "Hawaii")), ]
 
 # Shared categories and colors (same for every map, so one legend covers all)
-map_levels <- c("YYGYY", "YYYYY (low var)", "YYYYY (high var)", "Other",
+map_levels <- c("YYGYY", "YYYYY (flat)", "YYYYY (noisy)", "Other",
                 "Excluded (< 10 counties)", "No mandate / unassigned")
 map_colors <- setNames(c("#48A860", "#FDD03B", "#FF7F00", "#4682b4", "grey75", "grey92"), map_levels)
-letter_to_cat <- c(A = "YYGYY", B = "YYYYY (low var)", C = "YYYYY (high var)", D = "Other")
+letter_to_cat <- c(A = "YYGYY", B = "YYYYY (flat)", C = "YYYYY (noisy)", D = "Other")
 
 # Full lookup table (before the min_counties filter), to flag states excluded for size
 all_lookup <- fread(lookup_path)[, .(mandate_num, mandate_type, state_abbrev, N)]
