@@ -59,13 +59,13 @@ fwrite(merged_dt,
 
 
 ### (B) Measure 2 -----------------
-load_thetas <- function(version_id, week){
+load_thetas <- function(version_id, week, method){
   
   # root_dir
   root_dir <- paste0('/ihme/scratch/users/ems2285/thesis/outputs/outputs/',version_id)
   
   # load the data
-  dt <- fread(paste0(root_dir,'/effect_size_meta.csv'))[, .(mandate_num, mandate_type, state_abbrev, direction)]
+  dt <- fread(paste0(root_dir,'/effect_size_meta.csv'))[, .(mandate_num, mandate_type, state_abbrev, direction = get(paste0('direction_',method)))]
   dt[, direction := ifelse(direction=="decrease", "-1", ifelse(direction=="indeterminate", "0", "1"))]
   
   # resolve the week shift from versions_dt
@@ -77,7 +77,7 @@ load_thetas <- function(version_id, week){
 }
 
 # Extract and combine Measure 2 for all contexts and cutpoints
-theta_list <- Map(load_thetas, versions_dt$version, versions_dt$week)
+theta_list <- Map(load_thetas, versions_dt$version, versions_dt$week, method='RE') # method: IV = inverse variance weights, RE = random effects
 merged_thetas <- Reduce(function(x, y) merge(x, y, by = c("mandate_num", "mandate_type", "state_abbrev"), all = TRUE), theta_list)
 
 # Sort as desired
@@ -88,4 +88,4 @@ merged_thetas <- merged_thetas[, .(mandate_num, mandate_type, state_abbrev, `-2`
 
 # Save
 fwrite(merged_thetas,
-       paste0('/ihme/scratch/users/ems2285/thesis/outputs/shift_ITS_experiment_meta_theta_exp_',Scenario,'.csv'))
+       paste0('/ihme/scratch/users/ems2285/thesis/outputs/shift_ITS_experiment_meta_theta_exp_',Scenario,'_RE.csv'))
