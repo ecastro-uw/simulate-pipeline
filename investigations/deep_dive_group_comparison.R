@@ -79,10 +79,10 @@ combine_results <- function(row){
   p_val[, (week) := ifelse(binom_p < 0.05, 1, 0)]
   p_val$binom_p <- NULL
 
-  # load results from test 2
-  rr <- fread(paste0(input_path,'/effect_size_meta.csv'))[, .SD, .SDcols = c(list_of_cols, 'direction')]
-  rr[, (week) := ifelse(direction=='decrease', 1, 0)]
-  rr$direction <- NULL
+  # load results from test 2 (inverse-variance meta-analysis, summarize_results_v2.R)
+  rr <- fread(paste0(input_path,'/effect_size_meta.csv'))[, .SD, .SDcols = c(list_of_cols, 'direction_IV')]
+  rr[, (week) := ifelse(direction_IV=='decrease', 1, 0)]
+  rr$direction_IV <- NULL
 
   list(p_val = p_val, rr = rr)
 }
@@ -134,12 +134,15 @@ context_counties <- context_counties[context_id %in% all_contexts]
 #   Test 1: a county is significant when Pr(theta >= 0) < 0.05, i.e. when
 #           q95(theta) - q50(theta) < -log(1 - D). The context is significant when the
 #           binomial p-value for the number of significant counties is < 0.05 (computed
-#           and rounded as in summarize_results.R), so its detectable decrease is that of
+#           and rounded as in summarize_results_v2.R), so its detectable decrease is that of
 #           the k_crit-th most precise county, where k_crit is the number of significant
 #           counties the binomial test needs.
-#   Test 2: the pooled RR (theta draws pooled across counties, as in
-#           summarize_results.R) indicates a decrease when q97.5 < 0, i.e. when
-#           q97.5(theta) - q50(theta) < -log(1 - D).
+#   Test 2: the inverse-variance (equal-effects) pooled log RR from summarize_results_v2.R
+#           (county yi = mean of its theta draws, vi = their variance; counties without
+#           population data are dropped, as there) indicates a decrease when the upper
+#           95% CI bound is < 0. Shifting every county's yi to log(1 - D), this happens
+#           when 1.96 * SE < -log(1 - D), where SE = sqrt(1 / sum(1 / vi)). (For Test 2 the
+#           shift is relative to the mean prediction, since the IV estimate pools means.)
 # A context is 'flat' if its test could have detected a decrease of detect_cutoff
 # (default 20%) and 'noisy' otherwise.
 #
@@ -149,13 +152,16 @@ context_counties <- context_counties[context_id %in% all_contexts]
 # across counties), is at least detect_cutoff.
 detect_cutoff <- 0.20
 
-# Binomial rule from summarize_results.R: smallest number of significant counties
+# Binomial rule from summarize_results_v2.R: smallest number of significant counties
 # (out of n) for which round(binom_p, 2) < 0.05; NA if no number suffices
 calc_k_crit <- function(n){
   k <- seq_len(n)
   ok <- round(pbinom(k - 1, n, 0.05, lower.tail = FALSE), 2) < 0.05
   if (any(ok)) min(k[ok]) else NA_integer_
 }
+
+# county populations (Test 2 drops counties without one, as in summarize_results_v2.R)
+pop_ids <- unique(fread(paste0(covar_dir, 'population.csv'))[!is.na(pop), location_id])
 
 calc_precision <- function(context){
   ctx_locs <- context_counties[context_id == context, location_id]
@@ -172,8 +178,9 @@ calc_precision <- function(context){
   county_L <- apply(theta_mat, 1, function(x) diff(quantile(x, c(0.5, 0.95), na.rm = TRUE)))
   k_crit <- calc_k_crit(length(county_L))
   L1 <- if (is.na(k_crit)) Inf else sort(county_L)[k_crit]
-  # Test 2 (log scale, pooled draws)
-  L2 <- diff(quantile(as.vector(theta_mat), c(0.5, 0.975), na.rm = TRUE))
+  # Test 2 (log scale, inverse-variance pooled estimate)
+  vi <- apply(theta_mat[thetas$location_id %in% pop_ids, , drop = FALSE], 1, var, na.rm = TRUE)
+  L2 <- qnorm(0.975) * sqrt(1 / sum(1 / vi))
 
   # observed decrease at t = 0 relative to the pre-onset mean
   obs_dt <- fread(paste0(root_dir, week0_vers, '/batched_output/obs_context_', context, '.csv'))[
@@ -494,9 +501,9 @@ map_groups <- function(res_name, show_legend = TRUE){
 
 # load effect size estimates by context
 eff_dt <- fread(file.path(root_dir,week0_vers,'effect_size_meta.csv'))
-eff_dt <- eff_dt[, .(context_id, RR_median, RR_lower, RR_upper)]
+eff_dt <- eff_dt[, .(context_id, RR = RR_IV, RR_lower = RR_IV_lower, RR_upper = RR_IV_upper)]
 
-# Plot effect size (median and interval) against each covariate for group A
+# Plot effect size (inverse-variance pooled RR and 95% CI) against each covariate for group A
 # ("week 0 only") contexts. Groups come from Test 2, which is the test based on
 # effect_size_meta.csv.
 plot_effect_size <- function(res, subtitle){
@@ -512,14 +519,14 @@ plot_effect_size <- function(res, subtitle){
   plot_dt[var %in% c('population', 'cases_per_10k'), value := log(value)]
   plot_dt[, label := factor(label, levels = covar_info$label)]
 
-  ggplot(plot_dt[!is.na(value) & is.finite(value)], aes(x = value, y = RR_median)) +
+  ggplot(plot_dt[!is.na(value) & is.finite(value)], aes(x = value, y = RR)) +
     geom_hline(yintercept = 1, linetype = 'dashed', colour = 'grey50') +
     geom_errorbar(aes(ymin = RR_lower, ymax = RR_upper), width = 0, colour = 'grey60') +
     geom_point(colour = '#48A860', size = 2) +
     geom_text(aes(label = state_abbrev), size = 2.5, vjust = -0.8) +
     facet_wrap(~label, scales = 'free_x') +
     scale_x_continuous(name = NULL) +
-    scale_y_continuous(name = 'Effect size (RR, median and interval)') +
+    scale_y_continuous(name = 'Effect size (pooled IV RR and 95% CI)') +
     theme_bw() +
     ggtitle(paste0(subtitle, ': effect size vs. context characteristics'),
             subtitle = paste0(group_labels[['A']], ' contexts (Test 2), n = ', nrow(ctx_dt),
