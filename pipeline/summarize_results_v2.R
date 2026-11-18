@@ -167,8 +167,14 @@ fwrite(effect_size_dt, paste0(root_dir,'/effect_size_summary.csv'))
 # Pooling is done on the log scale and results are exponentiated to RRs:
 #   (a) Inverse-variance (fixed/equal effect): weights 1/vi
 #   (b) Random effects (REML; DerSimonian-Laird fallback if REML fails): weights 1/(vi + tau^2)
-# Population is not used in the weights; it is reported, and used in a diagnostic that checks
-# whether smaller counties have wider uncertainty (cor_logpop_sd < 0 is expected).
+#   (c) Mixed-effects meta-regression with log10(population) as a moderator (REML; DL fallback)
+# Population is not used as a weight. In standard meta-analysis, study size enters only through the
+# within-study variance, and here vi reflects each county's pre-event volatility (plus a context-level
+# calibration multiplier), which does not shrink with population (see the diagnostic: cor_logpop_sd and
+# theta_sd_vs_pop.pdf). Population is instead treated as a study-level characteristic in (c):
+#   - the moderator is centered at the population-weighted mean of log10(pop), so the intercept
+#     (RR_MR_popw) is the pooled RR for a county of population-typical size;
+#   - exp(slope) (RR_ratio_per10x) is the multiplicative change in RR per 10x increase in population.
 # Contexts with fewer than min_counties counties are not estimated.
 
 min_counties <- 10
@@ -225,7 +231,13 @@ calc_eff_size_meta <- function(context){
                         CI_RR_RE = NA_character_, direction_RE = NA_character_,
                         PI_RE_lower = NA_real_, PI_RE_upper = NA_real_,
                         tau2 = NA_real_, I2 = NA_real_, Q_pval = NA_real_,
-                        re_method = NA_character_, note = NA_character_)
+                        re_method = NA_character_,
+                        RR_MR_popw = NA_real_, RR_MR_popw_lower = NA_real_, RR_MR_popw_upper = NA_real_,
+                        CI_RR_MR_popw = NA_character_, direction_MR = NA_character_,
+                        RR_ratio_per10x = NA_real_, RR_ratio_per10x_lower = NA_real_,
+                        RR_ratio_per10x_upper = NA_real_, slope_pval = NA_real_,
+                        tau2_MR = NA_real_, R2_MR = NA_real_, mr_method = NA_character_,
+                        note = NA_character_)
   
   # do not estimate for small contexts
   if (k < min_counties){
@@ -264,6 +276,31 @@ calc_eff_size_meta <- function(context){
                  direction_IV = get_direction(RR_IV_lower, RR_IV_upper),
                  CI_RR_RE     = fmt_ci(RR_RE_lower, RR_RE_upper),
                  direction_RE = get_direction(RR_RE_lower, RR_RE_upper))]
+  
+  # (c) meta-regression on log10(population), centered at the population-weighted mean
+  x   <- log10(county_dt$pop)
+  x_w <- sum(county_dt$pop * x) / sum(county_dt$pop)
+  mr_dt <- data.frame(yi = county_dt$yi, vi = county_dt$vi, xc = x - x_w)
+  mr_method <- 'REML'
+  fit_mr <- tryCatch(rma(yi = yi, vi = vi, mods = ~ xc, data = mr_dt, method = 'REML'),
+                     error = function(e) NULL)
+  if (is.null(fit_mr)){
+    warning(paste0('Context ', context, ': meta-regression REML did not converge; using DerSimonian-Laird.'))
+    mr_method <- 'DL'
+    fit_mr <- rma(yi = yi, vi = vi, mods = ~ xc, data = mr_dt, method = 'DL')
+  }
+  temp_dt[, `:=`(RR_MR_popw            = round(exp(fit_mr$beta[1]), 3),
+                 RR_MR_popw_lower      = exp(fit_mr$ci.lb[1]),
+                 RR_MR_popw_upper      = exp(fit_mr$ci.ub[1]),
+                 RR_ratio_per10x       = round(exp(fit_mr$beta[2]), 3),
+                 RR_ratio_per10x_lower = exp(fit_mr$ci.lb[2]),
+                 RR_ratio_per10x_upper = exp(fit_mr$ci.ub[2]),
+                 slope_pval            = fit_mr$pval[2],
+                 tau2_MR               = fit_mr$tau2,
+                 R2_MR                 = if (is.null(fit_mr$R2)) NA_real_ else round(fit_mr$R2, 1),
+                 mr_method             = mr_method)]
+  temp_dt[, `:=`(CI_RR_MR_popw = fmt_ci(RR_MR_popw_lower, RR_MR_popw_upper),
+                 direction_MR  = get_direction(RR_MR_popw_lower, RR_MR_popw_upper))]
   
   return(list(summary = temp_dt, county = county_dt))
 }
